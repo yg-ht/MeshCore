@@ -121,7 +121,9 @@ void CommonCLI::loadPrefsInt(FILESYSTEM* fs, const char* filename) {
     file.read((uint8_t *)&_prefs->radio_fem_rxgain, sizeof(_prefs->radio_fem_rxgain));             // 293
     file.read((uint8_t *)&_prefs->cad_enabled, sizeof(_prefs->cad_enabled));                       // 294
     file.read((uint8_t *)&_prefs->cad_timeout_policy, sizeof(_prefs->cad_timeout_policy));         // 295
-    // next: 296
+    file.read((uint8_t *)&_prefs->cad_max_defer_secs, sizeof(_prefs->cad_max_defer_secs));         // 296
+    file.read((uint8_t *)&_prefs->cad_max_timeouts, sizeof(_prefs->cad_max_timeouts));             // 298
+    // next: 299
 
     // sanitise bad pref values
     _prefs->rx_delay_base = constrain(_prefs->rx_delay_base, 0, 20.0f);
@@ -154,6 +156,8 @@ void CommonCLI::loadPrefsInt(FILESYSTEM* fs, const char* filename) {
     _prefs->radio_fem_rxgain = constrain(_prefs->radio_fem_rxgain, 0, 1); // boolean
     _prefs->cad_enabled = constrain(_prefs->cad_enabled, 0, 1); // boolean
     _prefs->cad_timeout_policy = constrain(_prefs->cad_timeout_policy, CAD_TIMEOUT_DEFER, CAD_TIMEOUT_FORCE);
+    _prefs->cad_max_defer_secs = constrain(_prefs->cad_max_defer_secs, 0, 3600);
+    _prefs->cad_max_timeouts = constrain(_prefs->cad_max_timeouts, 0, 255);
 
     file.close();
   }
@@ -220,7 +224,9 @@ void CommonCLI::savePrefs(FILESYSTEM* fs) {
     file.write((uint8_t *)&_prefs->radio_fem_rxgain, sizeof(_prefs->radio_fem_rxgain));             // 293
     file.write((uint8_t *)&_prefs->cad_enabled, sizeof(_prefs->cad_enabled));                       // 294
     file.write((uint8_t *)&_prefs->cad_timeout_policy, sizeof(_prefs->cad_timeout_policy));         // 295
-    // next: 296
+    file.write((uint8_t *)&_prefs->cad_max_defer_secs, sizeof(_prefs->cad_max_defer_secs));         // 296
+    file.write((uint8_t *)&_prefs->cad_max_timeouts, sizeof(_prefs->cad_max_timeouts));             // 298
+    // next: 299
 
     file.close();
   }
@@ -721,6 +727,24 @@ void CommonCLI::handleSetCmd(uint32_t sender_timestamp, char* command, char* rep
     } else {
       strcpy(reply, "Error, must be defer, drop, or force");
     }
+  } else if (memcmp(config, "cad.max.defer ", 14) == 0) {
+    uint16_t seconds = _atoi(&config[14]);
+    if (seconds <= 3600) {
+      _prefs->cad_max_defer_secs = seconds;
+      savePrefs();
+      strcpy(reply, "OK");
+    } else {
+      strcpy(reply, "Error, must be 0-3600");
+    }
+  } else if (memcmp(config, "cad.max.timeouts ", 17) == 0) {
+    uint16_t count = _atoi(&config[17]);
+    if (count <= 255) {
+      _prefs->cad_max_timeouts = (uint8_t)count;
+      savePrefs();
+      strcpy(reply, "OK");
+    } else {
+      strcpy(reply, "Error, must be 0-255");
+    }
   } else if (memcmp(config, "owner.info ", 11) == 0) {
     config += 11;
     char *dp = _prefs->owner_info;
@@ -903,6 +927,10 @@ void CommonCLI::handleGetCmd(uint32_t sender_timestamp, char* command, char* rep
     sprintf(reply, "> %s", StrHelper::ftoa(_prefs->direct_tx_delay_factor));
   } else if (memcmp(config, "cad.timeout.policy", 18) == 0) {
     sprintf(reply, "> %s", cadTimeoutPolicyToString(_prefs->cad_timeout_policy));
+  } else if (memcmp(config, "cad.max.defer", 13) == 0) {
+    sprintf(reply, "> %u", (uint32_t)_prefs->cad_max_defer_secs);
+  } else if (memcmp(config, "cad.max.timeouts", 16) == 0) {
+    sprintf(reply, "> %u", (uint32_t)_prefs->cad_max_timeouts);
   } else if (memcmp(config, "owner.info", 10) == 0) {
     auto start = reply;
     *reply++ = '>';

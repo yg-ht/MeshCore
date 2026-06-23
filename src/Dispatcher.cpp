@@ -19,6 +19,8 @@ namespace mesh {
 void Dispatcher::begin() {
   n_sent_flood = n_sent_direct = 0;
   n_recv_flood = n_recv_direct = 0;
+  cad_defer_start = 0;
+  cad_defer_timeouts = 0;
   _err_flags = 0;
   radio_nonrx_start = _ms->getMillis();
 
@@ -290,18 +292,23 @@ void Dispatcher::checkSend() {
     if (cad_busy_start == 0) {
       cad_busy_start = _ms->getMillis();   // record when CAD busy state started
     }
+    if (cad_defer_start == 0) {
+      cad_defer_start = cad_busy_start;
+      cad_defer_timeouts = 0;
+    }
 
     if (_ms->getMillis() - cad_busy_start > getCADFailMaxDuration()) {
       _err_flags |= ERR_EVENT_CAD_TIMEOUT;
 
       MESH_DEBUG_PRINTLN("%s Dispatcher::checkSend(): CAD busy max duration reached!", getLogDateTime());
-      uint32_t busy_duration = _ms->getMillis() - cad_busy_start;
       uint8_t policy = getCADTimeoutPolicy();
       if (policy == CAD_TIMEOUT_POLICY_DROP) {
         Packet* dropped = _mgr->getNextOutbound(_ms->getMillis());
         if (dropped) {
           releasePacket(dropped);
         }
+        cad_defer_start = 0;
+        cad_defer_timeouts = 0;
         cad_busy_start = 0;
         next_tx_time = futureMillis(getCADFailRetryDelay());
         return;
@@ -309,6 +316,22 @@ void Dispatcher::checkSend() {
         // Explicit fail-open mode: transmit below even though local CAD still reports busy.
       } else {
         uint32_t retry_delay = getCADFailRetryDelay();
+        cad_defer_timeouts++;
+        uint32_t max_deferral_ms = getCADMaxDeferralMs();
+        uint8_t max_timeouts = getCADMaxTimeouts();
+        bool age_expired = max_deferral_ms > 0 && cad_defer_start > 0 && _ms->getMillis() - cad_defer_start >= max_deferral_ms;
+        bool count_expired = max_timeouts > 0 && cad_defer_timeouts >= max_timeouts;
+        if (age_expired || count_expired) {
+          Packet* expired = _mgr->getNextOutbound(_ms->getMillis());
+          if (expired) {
+            releasePacket(expired);
+          }
+          cad_defer_start = 0;
+          cad_defer_timeouts = 0;
+          cad_busy_start = 0;
+          next_tx_time = futureMillis(retry_delay);
+          return;
+        }
         cad_busy_start = 0;
         next_tx_time = futureMillis(retry_delay);
         return;
@@ -322,6 +345,8 @@ void Dispatcher::checkSend() {
 
   outbound = _mgr->getNextOutbound(_ms->getMillis());
   if (outbound) {
+    cad_defer_start = 0;
+    cad_defer_timeouts = 0;
     int len = 0;
     uint8_t raw[MAX_TRANS_UNIT];
 

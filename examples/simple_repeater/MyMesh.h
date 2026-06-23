@@ -159,6 +159,12 @@ protected:
   uint8_t getCADTimeoutPolicy() const override {
     return _prefs.cad_timeout_policy;
   }
+  uint32_t getCADMaxDeferralMs() const override {
+    return ((uint32_t)_prefs.cad_max_defer_secs) * 1000UL;
+  }
+  uint8_t getCADMaxTimeouts() const override {
+    return _prefs.cad_max_timeouts;
+  }
   uint8_t getExtraAckTransmitCount() const override {
     return _prefs.multi_acks;
   }

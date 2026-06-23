@@ -731,6 +731,8 @@ SensorMesh::SensorMesh(mesh::MainBoard& board, mesh::Radio& radio, mesh::Millise
   _prefs.interference_threshold = 0;  // disabled
   _prefs.cad_enabled = 0;             // hardware CAD before TX (off by default; 'set cad on')
   _prefs.cad_timeout_policy = CAD_TIMEOUT_DEFER;
+  _prefs.cad_max_defer_secs = DEFAULT_CAD_MAX_DEFER_SECS;
+  _prefs.cad_max_timeouts = DEFAULT_CAD_MAX_TIMEOUTS;
 
   // GPS defaults
   _prefs.gps_enabled = 0;

@@ -115,6 +115,12 @@ typedef uint32_t  DispatcherAction;
 #define CAD_TIMEOUT_POLICY_DROP     1
 #define CAD_TIMEOUT_POLICY_FORCE    2
 
+// Keep CAD deferral fail-closed by default. A CAD timeout is currently about
+// four seconds, so three timeout cycles drops a packet after repeated confirmed
+// busy radio state; the age limit is a guard for jitter and priority changes.
+#define DEFAULT_CAD_MAX_DEFER_SECS      30
+#define DEFAULT_CAD_MAX_TIMEOUTS        3
+
 /**
  * \brief  The low-level task that manages detecting incoming Packets, and the queueing
  *      and scheduling of outbound Packets.
@@ -132,6 +138,8 @@ class Dispatcher {
   unsigned long tx_budget_ms;
   unsigned long last_budget_update;
   unsigned long duty_cycle_window_ms;
+  unsigned long cad_defer_start;
+  uint8_t cad_defer_timeouts;
 
   void processRecvPacket(Packet* pkt);
   void updateTxBudget();
@@ -172,6 +180,8 @@ protected:
   virtual uint32_t getCADFailRetryDelay() const;
   virtual uint32_t getCADFailMaxDuration() const;
   virtual uint8_t getCADTimeoutPolicy() const { return CAD_TIMEOUT_POLICY_DEFER; }
+  virtual uint32_t getCADMaxDeferralMs() const { return DEFAULT_CAD_MAX_DEFER_SECS * 1000UL; }
+  virtual uint8_t getCADMaxTimeouts() const { return DEFAULT_CAD_MAX_TIMEOUTS; }
   virtual int getInterferenceThreshold() const { return 0; }    // disabled by default
   virtual bool getCADEnabled() const { return false; }    // hardware CAD disabled by default
   virtual int getAGCResetInterval() const { return 0; }    // disabled by default

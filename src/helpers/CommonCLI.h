@@ -70,6 +70,8 @@ struct NodePrefs { // persisted to file
   uint8_t loop_detect;
   uint8_t cad_enabled;      // hardware Channel Activity Detection before TX (boolean)
   uint8_t cad_timeout_policy;
+  uint16_t cad_max_defer_secs;
+  uint8_t cad_max_timeouts;
 };
 
 class CommonCLICallbacks {
