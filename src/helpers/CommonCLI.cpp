@@ -27,6 +27,33 @@ static bool isValidName(const char *n) {
   return true;
 }
 
+static const char* cadTimeoutPolicyToString(uint8_t policy) {
+  switch (policy) {
+    case CAD_TIMEOUT_DROP:
+      return "drop";
+    case CAD_TIMEOUT_FORCE:
+      return "force";
+    default:
+      return "defer";
+  }
+}
+
+static bool parseCADTimeoutPolicy(const char* value, uint8_t& policy) {
+  if (strcmp(value, "defer") == 0) {
+    policy = CAD_TIMEOUT_DEFER;
+    return true;
+  }
+  if (strcmp(value, "drop") == 0) {
+    policy = CAD_TIMEOUT_DROP;
+    return true;
+  }
+  if (strcmp(value, "force") == 0) {
+    policy = CAD_TIMEOUT_FORCE;
+    return true;
+  }
+  return false;
+}
+
 void CommonCLI::loadPrefs(FILESYSTEM* fs) {
   if (fs->exists("/com_prefs")) {
     loadPrefsInt(fs, "/com_prefs");   // new filename
@@ -93,7 +120,8 @@ void CommonCLI::loadPrefsInt(FILESYSTEM* fs, const char* filename) {
     file.read((uint8_t *)&_prefs->flood_max_advert, sizeof(_prefs->flood_max_advert));             // 292
     file.read((uint8_t *)&_prefs->radio_fem_rxgain, sizeof(_prefs->radio_fem_rxgain));             // 293
     file.read((uint8_t *)&_prefs->cad_enabled, sizeof(_prefs->cad_enabled));                       // 294
-    // next: 295
+    file.read((uint8_t *)&_prefs->cad_timeout_policy, sizeof(_prefs->cad_timeout_policy));         // 295
+    // next: 296
 
     // sanitise bad pref values
     _prefs->rx_delay_base = constrain(_prefs->rx_delay_base, 0, 20.0f);
@@ -125,6 +153,7 @@ void CommonCLI::loadPrefsInt(FILESYSTEM* fs, const char* filename) {
     _prefs->rx_boosted_gain = constrain(_prefs->rx_boosted_gain, 0, 1); // boolean
     _prefs->radio_fem_rxgain = constrain(_prefs->radio_fem_rxgain, 0, 1); // boolean
     _prefs->cad_enabled = constrain(_prefs->cad_enabled, 0, 1); // boolean
+    _prefs->cad_timeout_policy = constrain(_prefs->cad_timeout_policy, CAD_TIMEOUT_DEFER, CAD_TIMEOUT_FORCE);
 
     file.close();
   }
@@ -190,7 +219,8 @@ void CommonCLI::savePrefs(FILESYSTEM* fs) {
     file.write((uint8_t *)&_prefs->flood_max_advert, sizeof(_prefs->flood_max_advert));             // 292
     file.write((uint8_t *)&_prefs->radio_fem_rxgain, sizeof(_prefs->radio_fem_rxgain));             // 293
     file.write((uint8_t *)&_prefs->cad_enabled, sizeof(_prefs->cad_enabled));                       // 294
-    // next: 295
+    file.write((uint8_t *)&_prefs->cad_timeout_policy, sizeof(_prefs->cad_timeout_policy));         // 295
+    // next: 296
 
     file.close();
   }
@@ -682,6 +712,15 @@ void CommonCLI::handleSetCmd(uint32_t sender_timestamp, char* command, char* rep
     } else {
       strcpy(reply, "Error, must be 0-2");
     }
+  } else if (memcmp(config, "cad.timeout.policy ", 19) == 0) {
+    uint8_t policy;
+    if (parseCADTimeoutPolicy(&config[19], policy)) {
+      _prefs->cad_timeout_policy = policy;
+      savePrefs();
+      strcpy(reply, "OK");
+    } else {
+      strcpy(reply, "Error, must be defer, drop, or force");
+    }
   } else if (memcmp(config, "owner.info ", 11) == 0) {
     config += 11;
     char *dp = _prefs->owner_info;
@@ -862,6 +901,8 @@ void CommonCLI::handleGetCmd(uint32_t sender_timestamp, char* command, char* rep
     sprintf(reply, "> %d", (uint32_t)_prefs->flood_max);
   } else if (memcmp(config, "direct.txdelay", 14) == 0) {
     sprintf(reply, "> %s", StrHelper::ftoa(_prefs->direct_tx_delay_factor));
+  } else if (memcmp(config, "cad.timeout.policy", 18) == 0) {
+    sprintf(reply, "> %s", cadTimeoutPolicyToString(_prefs->cad_timeout_policy));
   } else if (memcmp(config, "owner.info", 10) == 0) {
     auto start = reply;
     *reply++ = '>';

@@ -513,6 +513,20 @@ This document provides an overview of CLI commands that can be sent to MeshCore 
 
 ---
 
+#### View or change CAD timeout policy
+**Usage:**
+- `get cad.timeout.policy`
+- `set cad.timeout.policy <policy>`
+
+**Parameters:**
+- `policy`: `defer`, `drop`, or `force`
+
+**Default:** `defer`
+
+**Note:** CAD means Channel Activity Detection. When the radio reports the channel busy for longer than the CAD timeout, `defer` keeps the queued packet and retries later, `drop` removes the next due packet, and `force` preserves the older fail-open behaviour of transmitting anyway. `force` should only be used for diagnostics or radio-state fallback because it can worsen congestion.
+
+---
+
 #### [Experimental] View or change the processing delay for received traffic
 **Usage:**
 - `get rxdelay`

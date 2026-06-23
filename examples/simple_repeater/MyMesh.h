@@ -156,6 +156,9 @@ protected:
   int getAGCResetInterval() const override {
     return ((int)_prefs.agc_reset_interval) * 4000;   // milliseconds
   }
+  uint8_t getCADTimeoutPolicy() const override {
+    return _prefs.cad_timeout_policy;
+  }
   uint8_t getExtraAckTransmitCount() const override {
     return _prefs.multi_acks;
   }

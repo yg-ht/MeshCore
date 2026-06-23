@@ -295,8 +295,24 @@ void Dispatcher::checkSend() {
       _err_flags |= ERR_EVENT_CAD_TIMEOUT;
 
       MESH_DEBUG_PRINTLN("%s Dispatcher::checkSend(): CAD busy max duration reached!", getLogDateTime());
-      // channel activity has gone on too long... (Radio might be in a bad state)
-      // force the pending transmit below...
+      uint32_t busy_duration = _ms->getMillis() - cad_busy_start;
+      uint8_t policy = getCADTimeoutPolicy();
+      if (policy == CAD_TIMEOUT_POLICY_DROP) {
+        Packet* dropped = _mgr->getNextOutbound(_ms->getMillis());
+        if (dropped) {
+          releasePacket(dropped);
+        }
+        cad_busy_start = 0;
+        next_tx_time = futureMillis(getCADFailRetryDelay());
+        return;
+      } else if (policy == CAD_TIMEOUT_POLICY_FORCE) {
+        // Explicit fail-open mode: transmit below even though local CAD still reports busy.
+      } else {
+        uint32_t retry_delay = getCADFailRetryDelay();
+        cad_busy_start = 0;
+        next_tx_time = futureMillis(retry_delay);
+        return;
+      }
     } else {
       next_tx_time = futureMillis(getCADFailRetryDelay());
       return;
