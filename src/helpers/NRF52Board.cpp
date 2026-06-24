@@ -4,7 +4,9 @@
 #include <bluefruit.h>
 #include <nrf_soc.h>
 
-static BLEDfu bledfu;
+#include "MeshCoreNrf52Dfu.h"
+
+static MeshCoreNrf52Dfu bledfu;
 
 static void connect_callback(uint16_t conn_handle) {
   (void)conn_handle;

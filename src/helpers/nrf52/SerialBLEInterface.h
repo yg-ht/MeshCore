@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../BaseSerialInterface.h"
+#include "../MeshCoreNrf52Dfu.h"
 #include <bluefruit.h>
 
 #ifndef BLE_TX_POWER
@@ -8,7 +9,7 @@
 #endif
 
 class SerialBLEInterface : public BaseSerialInterface {
-  BLEDfu bledfu;
+  MeshCoreNrf52Dfu bledfu;
   BLEUart bleuart;
   bool _isEnabled;
   bool _isDeviceConnected;
