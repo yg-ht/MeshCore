@@ -10,6 +10,8 @@
 
 #define NUM_NOISE_FLOOR_SAMPLES  64
 #define SAMPLING_THRESHOLD  14
+#define RSSI_CARRIER_SENSE_SAMPLES  5
+#define RSSI_CARRIER_SENSE_REQUIRED 3
 
 static volatile uint8_t state = STATE_IDLE;
 
@@ -116,6 +118,10 @@ bool RadioLibWrapper::isInRecvMode() const {
   return (state & ~STATE_INT_READY) == STATE_RX;
 }
 
+bool RadioLibWrapper::hasNoiseFloor() const {
+  return _noise_floor != 0 && _num_floor_samples >= NUM_NOISE_FLOOR_SAMPLES;
+}
+
 int RadioLibWrapper::recvRaw(uint8_t* bytes, int sz) {
   int len = 0;
   if (state & STATE_INT_READY) {
@@ -179,9 +185,29 @@ void RadioLibWrapper::onSendFinished() {
 }
 
 bool RadioLibWrapper::isChannelActive() {
-  return _threshold == 0 
-          ? false    // interference check is disabled
-          : getCurrentRSSI() > _noise_floor + _threshold;
+  if (_threshold == 0) {
+    return false;    // interference check is disabled
+  }
+  if (!hasNoiseFloor()) {
+    return false;
+  }
+
+  int16_t samples[RSSI_CARRIER_SENSE_SAMPLES];
+  for (uint8_t i = 0; i < RSSI_CARRIER_SENSE_SAMPLES; i++) {
+    samples[i] = (int16_t)getCurrentRSSI();
+  }
+
+  mesh::RssiCarrierSenseConfig config = {
+    _noise_floor,
+    _threshold,
+    true,
+    RSSI_CARRIER_SENSE_REQUIRED
+  };
+
+  // Instantaneous RSSI can spike briefly, so carrier sense requires a short
+  // majority of busy samples. This is only a local RSSI guard; it cannot detect
+  // hidden-node collisions at another receiver.
+  return mesh::RssiCarrierSense::isActive(config, samples, RSSI_CARRIER_SENSE_SAMPLES);
 }
 
 float RadioLibWrapper::getLastRSSI() const {
