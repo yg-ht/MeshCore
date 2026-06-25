@@ -895,6 +895,8 @@ MyMesh::MyMesh(mesh::MainBoard &board, mesh::Radio &radio, mesh::MillisecondCloc
   _prefs.interference_threshold = 0; // disabled
   _prefs.noise_sample_interval_ms = DEFAULT_NOISE_SAMPLE_INTERVAL_MS;
   _prefs.noise_calib_window_secs = DEFAULT_NOISE_CALIB_WINDOW_SECS;
+  _prefs.noise_clamp_low_dbm = DEFAULT_NOISE_CLAMP_LOW_DBM;
+  _prefs.noise_clamp_high_dbm = DEFAULT_NOISE_CLAMP_HIGH_DBM;
 
   // bridge defaults
   _prefs.bridge_enabled = 1;    // enabled
@@ -965,6 +967,8 @@ void MyMesh::begin(FILESYSTEM *fs) {
   radio_driver.setTxPower(_prefs.tx_power_dbm);
   radio_driver.setNoiseFloorCalibration(_prefs.noise_sample_interval_ms,
                                         _prefs.noise_calib_window_secs * 1000U);
+  radio_driver.setNoiseFloorClamps(_prefs.noise_clamp_low_dbm,
+                                   _prefs.noise_clamp_high_dbm);
 
   radio_driver.setRxBoostedGainMode(_prefs.rx_boosted_gain);
   MESH_DEBUG_PRINTLN("RX Boosted Gain Mode: %s",

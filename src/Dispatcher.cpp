@@ -52,6 +52,10 @@ void Dispatcher::updateTxBudget() {
   }
 }
 
+void Dispatcher::scheduleNoiseFloorRefreshAfterRadioAnomaly() {
+  _radio->scheduleNoiseFloorCalibration(DEFAULT_NOISE_FLOOR_SETTLE_MS);
+}
+
 int Dispatcher::calcRxDelay(float score, uint32_t air_time) const {
   return (int) ((pow(10, 0.85f - score) - 1.0) * air_time);
 }
@@ -117,6 +121,7 @@ void Dispatcher::loop() {
       MESH_DEBUG_PRINTLN("%s Dispatcher::loop(): WARNING: outbound packed send timed out!", getLogDateTime());
 
       _radio->onSendFinished();
+      scheduleNoiseFloorRefreshAfterRadioAnomaly();
       logTxFail(outbound, 2 + outbound->getPathByteLen() + outbound->payload_len);
 
       releasePacket(outbound);  // return to pool
@@ -294,6 +299,7 @@ void Dispatcher::checkSend() {
       _err_flags |= ERR_EVENT_CAD_TIMEOUT;
 
       MESH_DEBUG_PRINTLN("%s Dispatcher::checkSend(): CAD busy max duration reached!", getLogDateTime());
+      scheduleNoiseFloorRefreshAfterRadioAnomaly();
       // channel activity has gone on too long... (Radio might be in a bad state)
       // force the pending transmit below...
     } else {
@@ -329,6 +335,7 @@ void Dispatcher::checkSend() {
       if (!success) {
         MESH_DEBUG_PRINTLN("%s Dispatcher::loop(): ERROR: send start failed!", getLogDateTime());
 
+        scheduleNoiseFloorRefreshAfterRadioAnomaly();
         logTxFail(outbound, outbound->getRawLength());
   
         releasePacket(outbound);  // return to pool
