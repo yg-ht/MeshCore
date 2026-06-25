@@ -2,6 +2,9 @@
 
 #include "MeshCoreNrf52Dfu.h"
 
+#include <stddef.h>
+#include <string.h>
+
 #define DFU_REV_APPMODE 0x0001
 
 /*
@@ -26,22 +29,55 @@ static const uint8_t UUID128_CHR_DFU_REVISION[16] = {
     0x23, 0xD1, 0xBC, 0xEA, 0x5F, 0x78, 0x23, 0x15,
     0xDE, 0xEF, 0x12, 0x12, 0x34, 0x15, 0x00, 0x00};
 
-static SoftwareTimer dfu_reset_timer;
-static bool dfu_reset_timer_initialised = false;
+static uint16_t crc16(const uint8_t *data, size_t length) {
+  uint16_t crc = 0xFFFF;
 
-static void reset_to_ota_dfu(TimerHandle_t timer) {
-  (void)timer;
-
-  enterOTADfu();
-}
-
-static void schedule_reset_to_ota_dfu() {
-  if (!dfu_reset_timer_initialised) {
-    dfu_reset_timer.begin(250, reset_to_ota_dfu, nullptr, false);
-    dfu_reset_timer_initialised = true;
+  while (length-- > 0) {
+    uint8_t x = (uint8_t)((crc >> 8) ^ *data++);
+    x ^= (uint8_t)(x >> 4);
+    crc = (uint16_t)((crc << 8) ^ ((uint16_t)x << 12) ^ ((uint16_t)x << 5) ^ x);
   }
 
-  dfu_reset_timer.start();
+  return crc;
+}
+
+static void save_peer_data_for_bootloader(uint16_t conn_handle, BLEConnection *conn) {
+  /*
+   * This structure and RAM address are part of Adafruit's legacy OTA DFU
+   * bootloader contract. The bootloader reads this handoff after reset so it
+   * can continue with the same central instead of requiring a second manual
+   * scan/selection.
+   */
+  typedef struct {
+    ble_gap_addr_t addr;
+    ble_gap_irk_t irk;
+    ble_gap_enc_key_t enc_key;
+    uint8_t sys_attr[8];
+    uint16_t crc16;
+  } peer_data_t;
+
+  static_assert(offsetof(peer_data_t, crc16) == 60,
+                "nRF52 OTA peer-data layout must match the bootloader");
+
+  peer_data_t *peer_data = (peer_data_t *)(0x20007F80UL);
+  memset(peer_data, 0, sizeof(peer_data_t));
+
+  uint16_t sysattr_len = sizeof(peer_data->sys_attr);
+  sd_ble_gatts_sys_attr_get(conn_handle, peer_data->sys_attr, &sysattr_len,
+                            BLE_GATTS_SYS_ATTR_FLAG_SYS_SRVCS);
+
+  peer_data->addr = conn->getPeerAddr();
+
+  if (conn->secured()) {
+    bond_keys_t bond_keys;
+    if (conn->loadBondKey(&bond_keys)) {
+      peer_data->addr = bond_keys.peer_id.id_addr_info;
+      peer_data->irk = bond_keys.peer_id.id_info;
+      peer_data->enc_key = bond_keys.own_enc;
+    }
+  }
+
+  peer_data->crc16 = crc16((uint8_t *)peer_data, offsetof(peer_data_t, crc16));
 }
 
 static void dfu_control_write_authorize(uint16_t conn_handle, BLECharacteristic *chr,
@@ -69,14 +105,18 @@ static void dfu_control_write_authorize(uint16_t conn_handle, BLECharacteristic 
     return;
   }
 
-  Bluefruit.Advertising.restartOnDisconnect(false);
-
   BLEConnection *conn = Bluefruit.Connection(conn_handle);
-  if (conn != nullptr) {
-    conn->disconnect();
+  if (conn == nullptr) {
+    return;
   }
 
-  schedule_reset_to_ota_dfu();
+  save_peer_data_for_bootloader(conn_handle, conn);
+
+  // From this point the device should not fall back into normal app BLE
+  // advertising; the reset below transfers control to the OTA bootloader.
+  Bluefruit.Advertising.restartOnDisconnect(false);
+  conn->disconnect();
+  enterOTADfu();
 }
 
 MeshCoreNrf52Dfu::MeshCoreNrf52Dfu()
