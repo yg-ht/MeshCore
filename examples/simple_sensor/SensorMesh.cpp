@@ -726,6 +726,8 @@ SensorMesh::SensorMesh(mesh::MainBoard& board, mesh::Radio& radio, mesh::Millise
   _prefs.disable_fwd = true;
   _prefs.flood_max = 64;
   _prefs.interference_threshold = 0;  // disabled
+  _prefs.noise_sample_interval_ms = DEFAULT_NOISE_SAMPLE_INTERVAL_MS;
+  _prefs.noise_calib_window_secs = DEFAULT_NOISE_CALIB_WINDOW_SECS;
 
   // GPS defaults
   _prefs.gps_enabled = 0;
@@ -765,6 +767,8 @@ void SensorMesh::begin(FILESYSTEM* fs) {
   }
 
   radio_driver.setParams(_prefs.freq, _prefs.bw, _prefs.sf, _prefs.cr);
+  radio_driver.setNoiseFloorCalibration(_prefs.noise_sample_interval_ms,
+                                        _prefs.noise_calib_window_secs * 1000U);
   radio_driver.setTxPower(_prefs.tx_power_dbm);
 
   updateAdvertTimer();

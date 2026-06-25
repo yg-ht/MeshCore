@@ -91,7 +91,9 @@ void CommonCLI::loadPrefsInt(FILESYSTEM* fs, const char* filename) {
     file.read((uint8_t *)&_prefs->rx_boosted_gain, sizeof(_prefs->rx_boosted_gain));              // 290
     file.read((uint8_t *)&_prefs->flood_max_unscoped, sizeof(_prefs->flood_max_unscoped));   // 291
     file.read((uint8_t *)&_prefs->flood_max_advert, sizeof(_prefs->flood_max_advert));       // 292
-    // next: 293
+    file.read((uint8_t *)&_prefs->noise_sample_interval_ms, sizeof(_prefs->noise_sample_interval_ms)); // 293
+    file.read((uint8_t *)&_prefs->noise_calib_window_secs, sizeof(_prefs->noise_calib_window_secs));   // 295
+    // next: 297
 
     // sanitise bad pref values
     _prefs->rx_delay_base = constrain(_prefs->rx_delay_base, 0, 20.0f);
@@ -121,6 +123,8 @@ void CommonCLI::loadPrefsInt(FILESYSTEM* fs, const char* filename) {
 
     // sanitise settings
     _prefs->rx_boosted_gain = constrain(_prefs->rx_boosted_gain, 0, 1); // boolean
+    _prefs->noise_sample_interval_ms = constrain(_prefs->noise_sample_interval_ms, 50, 5000);
+    _prefs->noise_calib_window_secs = constrain(_prefs->noise_calib_window_secs, 1, 600);
 
     file.close();
   }
@@ -184,7 +188,9 @@ void CommonCLI::savePrefs(FILESYSTEM* fs) {
     file.write((uint8_t *)&_prefs->rx_boosted_gain, sizeof(_prefs->rx_boosted_gain));              // 290
     file.write((uint8_t *)&_prefs->flood_max_unscoped, sizeof(_prefs->flood_max_unscoped));   // 291
     file.write((uint8_t *)&_prefs->flood_max_advert, sizeof(_prefs->flood_max_advert));       // 292
-    // next: 293
+    file.write((uint8_t *)&_prefs->noise_sample_interval_ms, sizeof(_prefs->noise_sample_interval_ms)); // 293
+    file.write((uint8_t *)&_prefs->noise_calib_window_secs, sizeof(_prefs->noise_calib_window_secs));   // 295
+    // next: 297
 
     file.close();
   }
@@ -504,6 +510,26 @@ void CommonCLI::handleSetCmd(uint32_t sender_timestamp, char* command, char* rep
     _prefs->agc_reset_interval = atoi(&config[19]) / 4;
     savePrefs();
     sprintf(reply, "OK - interval rounded to %d", ((uint32_t) _prefs->agc_reset_interval) * 4);
+  } else if (memcmp(config, "noise.sample.ms ", 16) == 0) {
+    uint32_t interval_ms = _atoi(&config[16]);
+    if (interval_ms >= 50 && interval_ms <= 5000) {
+      _prefs->noise_sample_interval_ms = (uint16_t)interval_ms;
+      _callbacks->setNoiseFloorCalibration(_prefs->noise_sample_interval_ms, _prefs->noise_calib_window_secs);
+      savePrefs();
+      strcpy(reply, "OK");
+    } else {
+      strcpy(reply, "Error, must be 50-5000 ms");
+    }
+  } else if (memcmp(config, "noise.window.secs ", 18) == 0) {
+    uint32_t window_secs = _atoi(&config[18]);
+    if (window_secs >= 1 && window_secs <= 600) {
+      _prefs->noise_calib_window_secs = (uint16_t)window_secs;
+      _callbacks->setNoiseFloorCalibration(_prefs->noise_sample_interval_ms, _prefs->noise_calib_window_secs);
+      savePrefs();
+      strcpy(reply, "OK");
+    } else {
+      strcpy(reply, "Error, must be 1-600 seconds");
+    }
   } else if (memcmp(config, "multi.acks ", 11) == 0) {
     _prefs->multi_acks = atoi(&config[11]);
     savePrefs();
@@ -778,6 +804,10 @@ void CommonCLI::handleGetCmd(uint32_t sender_timestamp, char* command, char* rep
     sprintf(reply, "> %d", (uint32_t) _prefs->interference_threshold);
   } else if (memcmp(config, "agc.reset.interval", 18) == 0) {
     sprintf(reply, "> %d", ((uint32_t) _prefs->agc_reset_interval) * 4);
+  } else if (memcmp(config, "noise.sample.ms", 15) == 0) {
+    sprintf(reply, "> %u", (uint32_t)_prefs->noise_sample_interval_ms);
+  } else if (memcmp(config, "noise.window.secs", 17) == 0) {
+    sprintf(reply, "> %u", (uint32_t)_prefs->noise_calib_window_secs);
   } else if (memcmp(config, "multi.acks", 10) == 0) {
     sprintf(reply, "> %d", (uint32_t) _prefs->multi_acks);
   } else if (memcmp(config, "allow.read.only", 15) == 0) {
