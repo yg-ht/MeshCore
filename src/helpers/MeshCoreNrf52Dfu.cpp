@@ -80,6 +80,32 @@ static void save_peer_data_for_bootloader(uint16_t conn_handle, BLEConnection *c
   peer_data->crc16 = crc16((uint8_t *)peer_data, offsetof(peer_data_t, crc16));
 }
 
+static void reset_to_ble_dfu_with_peer_handoff() {
+  /*
+   * The peer-data block above is the legacy BLEDfu handoff contract. It must
+   * be paired with the legacy BLE DFU GPREGRET magic (0xB1), not Arduino's
+   * enterOTADfu() magic (0xA8), otherwise bootloaders can ignore the saved
+   * central details and fall back to normal OTA advertising.
+   */
+  enum { BLE_DFU_WITH_PEER_HANDOFF_MAGIC = 0xB1 };
+
+  sd_power_gpregret_clr(0, 0xFF);
+  sd_power_gpregret_set(0, BLE_DFU_WITH_PEER_HANDOFF_MAGIC);
+  sd_softdevice_disable();
+
+  // Prevent pending application interrupts from firing during reset teardown.
+  NVIC->ICER[0] = 0xFFFFFFFF;
+  NVIC->ICPR[0] = 0xFFFFFFFF;
+#if defined(__NRF_NVIC_ISER_COUNT) && __NRF_NVIC_ISER_COUNT == 2
+  NVIC->ICER[1] = 0xFFFFFFFF;
+  NVIC->ICPR[1] = 0xFFFFFFFF;
+#endif
+
+  NVIC_SystemReset();
+
+  while (true) {}
+}
+
 static void dfu_control_write_authorize(uint16_t conn_handle, BLECharacteristic *chr,
                                         ble_gatts_evt_write_t *request) {
   if ((request->handle != chr->handles().value_handle) ||
@@ -116,7 +142,7 @@ static void dfu_control_write_authorize(uint16_t conn_handle, BLECharacteristic 
   // advertising; the reset below transfers control to the OTA bootloader.
   Bluefruit.Advertising.restartOnDisconnect(false);
   conn->disconnect();
-  enterOTADfu();
+  reset_to_ble_dfu_with_peer_handoff();
 }
 
 MeshCoreNrf52Dfu::MeshCoreNrf52Dfu()
