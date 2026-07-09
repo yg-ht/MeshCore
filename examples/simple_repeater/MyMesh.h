@@ -142,6 +142,8 @@ protected:
   void logRx(mesh::Packet* pkt, int len, float score) override;
   void logTx(mesh::Packet* pkt, int len) override;
   void logTxFail(mesh::Packet* pkt, int len) override;
+  void logMacEvent(const char* event, mesh::Packet* pkt, int len, uint8_t priority,
+                   uint32_t delay_millis, uint32_t airtime_millis, uint32_t value) override;
   int calcRxDelay(float score, uint32_t air_time) const override;
 
   uint32_t getRetransmitDelay(const mesh::Packet* packet) override;
@@ -227,6 +229,8 @@ public:
   void formatRadioStatsReply(char *reply) override;
   void formatNoiseFloorStatsReply(char *reply) override;
   void formatPacketStatsReply(char *reply) override;
+  void formatMacCadStatsReply(char *reply) override;
+  void formatMacTxStatsReply(char *reply) override;
   void startRegionsLoad() override;
   bool saveRegions() override;
   void onDefaultRegionChanged(const RegionEntry* r) override;

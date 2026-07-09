@@ -21,6 +21,7 @@ void Dispatcher::begin() {
   n_recv_flood = n_recv_direct = 0;
   cad_defer_start = 0;
   cad_defer_timeouts = 0;
+  memset(&mac_stats, 0, sizeof(mac_stats));
   _err_flags = 0;
   radio_nonrx_start = _ms->getMillis();
 
@@ -112,6 +113,8 @@ void Dispatcher::loop() {
       }
 
       _radio->onSendFinished();
+      mac_stats.tx_done++;
+      logMacEvent("tx_done", outbound, 2 + outbound->getPathByteLen() + outbound->payload_len, 0, 0, t, tx_budget_ms);
       logTx(outbound, 2 + outbound->getPathByteLen() + outbound->payload_len);
       if (outbound->isRouteFlood()) {
         n_sent_flood++;
@@ -125,6 +128,8 @@ void Dispatcher::loop() {
 
       _radio->onSendFinished();
       scheduleNoiseFloorRefreshAfterRadioAnomaly();
+      mac_stats.tx_timeout++;
+      logMacEvent("tx_timeout", outbound, 2 + outbound->getPathByteLen() + outbound->payload_len, 0, 0, 0, 0);
       logTxFail(outbound, 2 + outbound->getPathByteLen() + outbound->payload_len);
 
       releasePacket(outbound);  // return to pool
@@ -146,6 +151,7 @@ void Dispatcher::loop() {
   {
     Packet* pkt = _mgr->getNextInbound(_ms->getMillis());
     if (pkt) {
+      logMacEvent("rx_delay_done", pkt, pkt->getRawLength(), 0, 0, _radio->getEstAirtimeFor(pkt->getRawLength()), 0);
       processRecvPacket(pkt);
     }
   }
@@ -207,6 +213,7 @@ void Dispatcher::checkRecv() {
 
       pkt = _mgr->allocNew();
       if (pkt == NULL) {
+        mac_stats.pool_full++;
         MESH_DEBUG_PRINTLN("%s Dispatcher::checkRecv(): WARNING: received data, no unused packets available!", getLogDateTime());
       } else {
         if (tryParsePacket(pkt, raw, len)) {
@@ -256,6 +263,8 @@ void Dispatcher::checkRecv() {
         if (_delay > MAX_RX_DELAY_MILLIS) {
           _delay = MAX_RX_DELAY_MILLIS;
         }
+        mac_stats.rx_delay++;
+        logMacEvent("rx_delay", pkt, pkt->getRawLength(), 0, _delay, air_time, (uint32_t)(score * 1000));
         _mgr->queueInbound(pkt, futureMillis(_delay)); // add to delayed inbound queue
       }
     } else {
@@ -275,6 +284,8 @@ void Dispatcher::processRecvPacket(Packet* pkt) {
     uint8_t priority = (action >> 24) - 1;
     uint32_t _delay = action & 0xFFFFFF;
 
+    mac_stats.retransmit++;
+    logMacEvent("retransmit", pkt, pkt->getRawLength(), priority, _delay, _radio->getEstAirtimeFor(pkt->getRawLength()), 0);
     _mgr->queueOutbound(pkt, priority, futureMillis(_delay));
   }
 }
@@ -294,6 +305,7 @@ void Dispatcher::checkSend() {
   
   if (!millisHasNowPassed(next_tx_time)) return;
   if (_radio->isReceiving()) {
+    Packet* pending = _mgr->peekNextOutbound(_ms->getMillis());
     if (cad_busy_start == 0) {
       cad_busy_start = _ms->getMillis();   // record when CAD busy state started
     }
@@ -304,6 +316,8 @@ void Dispatcher::checkSend() {
 
     if (_ms->getMillis() - cad_busy_start > getCADFailMaxDuration()) {
       _err_flags |= ERR_EVENT_CAD_TIMEOUT;
+      mac_stats.cad_timeout++;
+      logMacEvent("cad_timeout", pending, pending ? pending->getRawLength() : 0, 0, 0, 0, _ms->getMillis() - cad_busy_start);
 
       MESH_DEBUG_PRINTLN("%s Dispatcher::checkSend(): CAD busy max duration reached!", getLogDateTime());
       scheduleNoiseFloorRefreshAfterRadioAnomaly();
@@ -320,6 +334,7 @@ void Dispatcher::checkSend() {
         next_tx_time = futureMillis(getCADFailRetryDelay());
         return;
       } else if (policy == CAD_TIMEOUT_POLICY_FORCE) {
+        mac_stats.cad_forced_tx++;
         // Explicit fail-open mode: transmit below even though local CAD still reports busy.
       } else {
         uint32_t retry_delay = getCADFailRetryDelay();
@@ -344,7 +359,10 @@ void Dispatcher::checkSend() {
         return;
       }
     } else {
-      next_tx_time = futureMillis(getCADFailRetryDelay());
+      uint32_t retry_delay = getCADFailRetryDelay();
+      mac_stats.cad_busy++;
+      logMacEvent("cad_busy", pending, pending ? pending->getRawLength() : 0, 0, retry_delay, 0, _ms->getMillis() - cad_busy_start);
+      next_tx_time = futureMillis(retry_delay);
       return;
     }
   }
@@ -367,6 +385,8 @@ void Dispatcher::checkSend() {
 
     if (len + outbound->payload_len > MAX_TRANS_UNIT) {
       MESH_DEBUG_PRINTLN("%s Dispatcher::checkSend(): FATAL: Invalid packet queued... too long, len=%d", getLogDateTime(), len + outbound->payload_len);
+      mac_stats.invalid_queue++;
+      logMacEvent("invalid_queue", outbound, len + outbound->payload_len, 0, 0, 0, 0);
       _mgr->free(outbound);
       outbound = NULL;
     } else {
@@ -379,12 +399,16 @@ void Dispatcher::checkSend() {
         MESH_DEBUG_PRINTLN("%s Dispatcher::loop(): ERROR: send start failed!", getLogDateTime());
 
         scheduleNoiseFloorRefreshAfterRadioAnomaly();
+        mac_stats.tx_start_fail++;
+        logMacEvent("tx_start_fail", outbound, outbound->getRawLength(), 0, 0, max_airtime, 0);
         logTxFail(outbound, outbound->getRawLength());
   
         releasePacket(outbound);  // return to pool
         outbound = NULL;
         return;
       }
+      mac_stats.tx_start++;
+      logMacEvent("tx_start", outbound, len, 0, 0, max_airtime, tx_budget_ms);
       outbound_expiry = futureMillis(max_airtime);
 
     #if MESH_PACKET_LOGGING
@@ -406,6 +430,7 @@ Packet* Dispatcher::obtainNewPacket() {
   auto pkt = _mgr->allocNew();  // TODO: zero out all fields
   if (pkt == NULL) {
     _err_flags |= ERR_EVENT_FULL;
+    mac_stats.pool_full++;
   } else {
     pkt->payload_len = pkt->path_len = 0;
     pkt->_snr = 0;
@@ -420,8 +445,11 @@ void Dispatcher::releasePacket(Packet* packet) {
 void Dispatcher::sendPacket(Packet* packet, uint8_t priority, uint32_t delay_millis) {
   if (!Packet::isValidPathLen(packet->path_len) || packet->payload_len > MAX_PACKET_PAYLOAD) {
     MESH_DEBUG_PRINTLN("%s Dispatcher::sendPacket(): ERROR: invalid packet... path_len=%d, payload_len=%d", getLogDateTime(), (uint32_t) packet->path_len, (uint32_t) packet->payload_len);
+    mac_stats.invalid_queue++;
+    logMacEvent("invalid_queue", packet, packet->getRawLength(), priority, delay_millis, 0, 0);
     _mgr->free(packet);
   } else {
+    logMacEvent("queue_tx", packet, packet->getRawLength(), priority, delay_millis, _radio->getEstAirtimeFor(packet->getRawLength()), _mgr->getOutboundTotal());
     _mgr->queueOutbound(packet, priority, futureMillis(delay_millis));
   }
 }
