@@ -475,11 +475,7 @@ void MyMesh::onPeerDataRecv(mesh::Packet *packet, uint8_t type, int sender_idx, 
 
       uint32_t delay_millis;
       if (send_ack) {
-        if (client->out_path_len == OUT_PATH_UNKNOWN) {
-          mesh::Packet *ack = createAck(ack_hash);
-          if (ack) sendFloodReply(ack, TXT_ACK_DELAY, packet->getPathHashSize());
-          delay_millis = TXT_ACK_DELAY + REPLY_DELAY_MILLIS;
-        } else {
+        if (client->out_path_len != OUT_PATH_UNKNOWN) {
           uint32_t d = TXT_ACK_DELAY;
           if (getExtraAckTransmitCount() > 0) {
             mesh::Packet *a1 = createMultiAck(ack_hash, 1);
@@ -490,6 +486,21 @@ void MyMesh::onPeerDataRecv(mesh::Packet *packet, uint8_t type, int sender_idx, 
           mesh::Packet *a2 = createAck(ack_hash);
           if (a2) sendDirect(a2, client->out_path, client->out_path_len, d);
           delay_millis = d + REPLY_DELAY_MILLIS;
+        } else if (packet->isRouteFlood()) {
+          // The inbound flood path is a usable return route, so avoid broadcasting a separate ACK.
+          mesh::Packet *path = createPathReturn(client->id, secret, packet->path, packet->path_len,
+                                                PAYLOAD_TYPE_ACK, (uint8_t *)&ack_hash, 4);
+          if (path) {
+            sendFloodReply(path, TXT_ACK_DELAY, packet->getPathHashSize());
+          } else {
+            mesh::Packet *ack = createAck(ack_hash);
+            if (ack) sendFloodReply(ack, TXT_ACK_DELAY, packet->getPathHashSize());
+          }
+          delay_millis = TXT_ACK_DELAY + REPLY_DELAY_MILLIS;
+        } else {
+          mesh::Packet *ack = createAck(ack_hash);
+          if (ack) sendFloodReply(ack, TXT_ACK_DELAY, packet->getPathHashSize());
+          delay_millis = TXT_ACK_DELAY + REPLY_DELAY_MILLIS;
         }
       } else {
         delay_millis = 0;
@@ -507,12 +518,25 @@ void MyMesh::onPeerDataRecv(mesh::Packet *packet, uint8_t type, int sender_idx, 
         // mesh::Utils::sha256((uint8_t *)&expected_ack_crc, 4, temp, 5 + text_len, self_id.pub_key,
         // PUB_KEY_SIZE);
 
-        auto reply = createDatagram(PAYLOAD_TYPE_TXT_MSG, client->id, secret, temp, 5 + text_len);
-        if (reply) {
-          if (client->out_path_len == OUT_PATH_UNKNOWN) {
-            sendFloodReply(reply, delay_millis + SERVER_RESPONSE_DELAY, packet->getPathHashSize());
-          } else {
+        if (client->out_path_len != OUT_PATH_UNKNOWN) {
+          auto reply = createDatagram(PAYLOAD_TYPE_TXT_MSG, client->id, secret, temp, 5 + text_len);
+          if (reply) {
             sendDirect(reply, client->out_path, client->out_path_len, delay_millis + SERVER_RESPONSE_DELAY);
+          }
+        } else if (packet->isRouteFlood()) {
+          // Carry the CLI reply back on the learned flood path rather than broadcasting another flood.
+          mesh::Packet *path = createPathReturn(client->id, secret, packet->path, packet->path_len,
+                                                PAYLOAD_TYPE_TXT_MSG, temp, 5 + text_len);
+          if (path) {
+            sendFloodReply(path, delay_millis + SERVER_RESPONSE_DELAY, packet->getPathHashSize());
+          } else {
+            auto reply = createDatagram(PAYLOAD_TYPE_TXT_MSG, client->id, secret, temp, 5 + text_len);
+            if (reply) sendFloodReply(reply, delay_millis + SERVER_RESPONSE_DELAY, packet->getPathHashSize());
+          }
+        } else {
+          auto reply = createDatagram(PAYLOAD_TYPE_TXT_MSG, client->id, secret, temp, 5 + text_len);
+          if (reply) {
+            sendFloodReply(reply, delay_millis + SERVER_RESPONSE_DELAY, packet->getPathHashSize());
           }
         }
       }

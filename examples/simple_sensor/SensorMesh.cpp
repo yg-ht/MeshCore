@@ -598,12 +598,25 @@ void SensorMesh::onPeerDataRecv(mesh::Packet* packet, uint8_t type, int sender_i
           memcpy(temp, &timestamp, 4);   // mostly an extra blob to help make packet_hash unique
           temp[4] = (TXT_TYPE_CLI_DATA << 2);
 
-          auto reply = createDatagram(PAYLOAD_TYPE_TXT_MSG, from->id, secret, temp, 5 + text_len);
-          if (reply) {
-            if (from->out_path_len == OUT_PATH_UNKNOWN) {
-              sendFlood(reply, CLI_REPLY_DELAY_MILLIS, packet->getPathHashSize());
-            } else {
+          if (from->out_path_len != OUT_PATH_UNKNOWN) {
+            auto reply = createDatagram(PAYLOAD_TYPE_TXT_MSG, from->id, secret, temp, 5 + text_len);
+            if (reply) {
               sendDirect(reply, from->out_path, from->out_path_len, CLI_REPLY_DELAY_MILLIS);
+            }
+          } else if (packet->isRouteFlood()) {
+            // The request's flood path provides a route back to the caller; reuse it for the CLI reply.
+            mesh::Packet* path = createPathReturn(from->id, secret, packet->path, packet->path_len,
+                                                  PAYLOAD_TYPE_TXT_MSG, temp, 5 + text_len);
+            if (path) {
+              sendFlood(path, CLI_REPLY_DELAY_MILLIS, packet->getPathHashSize());
+            } else {
+              auto reply = createDatagram(PAYLOAD_TYPE_TXT_MSG, from->id, secret, temp, 5 + text_len);
+              if (reply) sendFlood(reply, CLI_REPLY_DELAY_MILLIS, packet->getPathHashSize());
+            }
+          } else {
+            auto reply = createDatagram(PAYLOAD_TYPE_TXT_MSG, from->id, secret, temp, 5 + text_len);
+            if (reply) {
+              sendFlood(reply, CLI_REPLY_DELAY_MILLIS, packet->getPathHashSize());
             }
           }
         }

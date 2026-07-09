@@ -340,6 +340,28 @@ bool BaseChatMesh::onContactPathRecv(ContactInfo& from, uint8_t* in_path, uint8_
     }
   } else if (extra_type == PAYLOAD_TYPE_RESPONSE && extra_len > 0) {
     onContactResponse(from, extra, extra_len);
+  } else if (extra_type == PAYLOAD_TYPE_TXT_MSG && extra_len > 5) {
+    // Some servers return CLI output as text data carried on the learned flood path.
+    uint32_t timestamp;
+    memcpy(&timestamp, extra, 4);
+    uint8_t flags = extra[4] >> 2;
+
+    if (flags == TXT_TYPE_CLI_DATA) {
+      size_t text_len = 0;
+      while (text_len < extra_len - 5 && extra[5 + text_len] != 0) {
+        text_len++;
+      }
+
+      char text[MAX_PACKET_PAYLOAD];
+      memcpy(text, &extra[5], text_len);
+      text[text_len] = 0;
+
+      mesh::Packet path_packet;
+      path_packet.header = (PAYLOAD_TYPE_PATH << PH_TYPE_SHIFT) | ROUTE_TYPE_FLOOD;
+      path_packet.path_len = in_path_len;
+      mesh::Packet::copyPath(path_packet.path, in_path, in_path_len);
+      onCommandDataRecv(from, &path_packet, timestamp, text);
+    }
   }
   return true;  // send reciprocal path if necessary
 }
