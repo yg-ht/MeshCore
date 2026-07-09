@@ -19,6 +19,10 @@
 #define LOOP_DETECT_MODERATE  2
 #define LOOP_DETECT_STRICT    3
 
+#define CAD_TIMEOUT_DEFER     CAD_TIMEOUT_POLICY_DEFER
+#define CAD_TIMEOUT_DROP      CAD_TIMEOUT_POLICY_DROP
+#define CAD_TIMEOUT_FORCE     CAD_TIMEOUT_POLICY_FORCE
+
 struct NodePrefs { // persisted to file
   float airtime_factor;
   char node_name[32];
@@ -65,6 +69,9 @@ struct NodePrefs { // persisted to file
   uint8_t path_hash_mode;   // which path mode to use when sending
   uint8_t loop_detect;
   uint8_t cad_enabled;      // hardware Channel Activity Detection before TX (boolean)
+  uint8_t cad_timeout_policy;
+  uint16_t cad_max_defer_secs;
+  uint8_t cad_max_timeouts;
 };
 
 class CommonCLICallbacks {
