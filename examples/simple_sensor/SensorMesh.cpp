@@ -746,6 +746,10 @@ SensorMesh::SensorMesh(mesh::MainBoard& board, mesh::Radio& radio, mesh::Millise
   _prefs.cad_timeout_policy = CAD_TIMEOUT_DEFER;
   _prefs.cad_max_defer_secs = DEFAULT_CAD_MAX_DEFER_SECS;
   _prefs.cad_max_timeouts = DEFAULT_CAD_MAX_TIMEOUTS;
+  _prefs.noise_sample_interval_ms = DEFAULT_NOISE_SAMPLE_INTERVAL_MS;
+  _prefs.noise_calib_window_secs = DEFAULT_NOISE_CALIB_WINDOW_SECS;
+  _prefs.noise_clamp_low_dbm = DEFAULT_NOISE_CLAMP_LOW_DBM;
+  _prefs.noise_clamp_high_dbm = DEFAULT_NOISE_CLAMP_HIGH_DBM;
 
   // GPS defaults
   _prefs.gps_enabled = 0;
@@ -786,6 +790,10 @@ void SensorMesh::begin(FILESYSTEM* fs) {
   }
 
   radio_driver.setParams(_prefs.freq, _prefs.bw, _prefs.sf, _prefs.cr);
+  radio_driver.setNoiseFloorCalibration(_prefs.noise_sample_interval_ms,
+                                        _prefs.noise_calib_window_secs * 1000U);
+  radio_driver.setNoiseFloorClamps(_prefs.noise_clamp_low_dbm,
+                                   _prefs.noise_clamp_high_dbm);
   radio_driver.setTxPower(_prefs.tx_power_dbm);
   board.setLoRaFemLnaEnabled(_prefs.radio_fem_rxgain);
 
@@ -873,6 +881,10 @@ void SensorMesh::formatStatsReply(char *reply) {
 
 void SensorMesh::formatRadioStatsReply(char *reply) {
   StatsFormatHelper::formatRadioStats(reply, _radio, radio_driver, getTotalAirTime(), getReceiveAirTime());
+}
+
+void SensorMesh::formatNoiseFloorStatsReply(char *reply) {
+  StatsFormatHelper::formatNoiseFloorStats(reply, _radio);
 }
 
 void SensorMesh::formatPacketStatsReply(char *reply) {
