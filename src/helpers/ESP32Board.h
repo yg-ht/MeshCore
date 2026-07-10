@@ -150,7 +150,7 @@ public:
     esp_restart();
   }
 
-  bool startOTAUpdate(const char* id, char reply[]) override;
+  bool startOTAUpdate(const char* id, char reply[], uint32_t timeout_mins) override;
 
   void setInhibitSleep(bool inhibit) {
     inhibit_sleep = inhibit;

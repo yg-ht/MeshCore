@@ -137,6 +137,7 @@ static void dfu_control_write_authorize(uint16_t conn_handle, BLECharacteristic 
   }
 
   save_peer_data_for_bootloader(conn_handle, conn);
+  meshcore_nrf52_cancel_ota_timeout();
 
   // From this point the device should not fall back into normal app BLE
   // advertising; the reset below transfers control to the OTA bootloader.

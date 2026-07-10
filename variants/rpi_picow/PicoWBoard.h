@@ -47,5 +47,5 @@ public:
     rp2040.reboot();
   }
 
-  bool startOTAUpdate(const char* id, char reply[]) override;
+  bool startOTAUpdate(const char* id, char reply[], uint32_t timeout_mins) override;
 };

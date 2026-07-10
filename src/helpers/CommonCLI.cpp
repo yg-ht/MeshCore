@@ -9,6 +9,9 @@
 #define BRIDGE_MAX_BAUD 115200
 #endif
 
+#define DEFAULT_OTA_TIMEOUT_MINS 10
+#define MAX_OTA_TIMEOUT_MINS 240
+
 // Believe it or not, this std C function is busted on some platforms!
 static uint32_t _atoi(const char* sp) {
   uint32_t n = 0;
@@ -17,6 +20,25 @@ static uint32_t _atoi(const char* sp) {
     n += (*sp++ - '0');
   }
   return n;
+}
+
+static bool parseUnsignedDecimal(const char* sp, uint32_t& out) {
+  if (*sp < '0' || *sp > '9') {
+    return false;
+  }
+
+  uint32_t n = 0;
+  while (*sp >= '0' && *sp <= '9') {
+    n *= 10;
+    n += (*sp++ - '0');
+  }
+
+  if (*sp != 0) {
+    return false;
+  }
+
+  out = n;
+  return true;
 }
 
 static bool isValidName(const char *n) {
@@ -93,7 +115,8 @@ void CommonCLI::loadPrefsInt(FILESYSTEM* fs, const char* filename) {
     file.read((uint8_t *)&_prefs->flood_max_advert, sizeof(_prefs->flood_max_advert));             // 292
     file.read((uint8_t *)&_prefs->radio_fem_rxgain, sizeof(_prefs->radio_fem_rxgain));             // 293
     file.read((uint8_t *)&_prefs->cad_enabled, sizeof(_prefs->cad_enabled));                       // 294
-    // next: 295
+    file.read((uint8_t *)&_prefs->ota_timeout_mins, sizeof(_prefs->ota_timeout_mins));             // 295
+    // next: 297
 
     // sanitise bad pref values
     _prefs->rx_delay_base = constrain(_prefs->rx_delay_base, 0, 20.0f);
@@ -125,6 +148,11 @@ void CommonCLI::loadPrefsInt(FILESYSTEM* fs, const char* filename) {
     _prefs->rx_boosted_gain = constrain(_prefs->rx_boosted_gain, 0, 1); // boolean
     _prefs->radio_fem_rxgain = constrain(_prefs->radio_fem_rxgain, 0, 1); // boolean
     _prefs->cad_enabled = constrain(_prefs->cad_enabled, 0, 1); // boolean
+
+    // Keep 0 as an explicit operator choice while recovering corrupt prefs.
+    if (_prefs->ota_timeout_mins > MAX_OTA_TIMEOUT_MINS) {
+      _prefs->ota_timeout_mins = DEFAULT_OTA_TIMEOUT_MINS;
+    }
 
     file.close();
   }
@@ -190,7 +218,8 @@ void CommonCLI::savePrefs(FILESYSTEM* fs) {
     file.write((uint8_t *)&_prefs->flood_max_advert, sizeof(_prefs->flood_max_advert));             // 292
     file.write((uint8_t *)&_prefs->radio_fem_rxgain, sizeof(_prefs->radio_fem_rxgain));             // 293
     file.write((uint8_t *)&_prefs->cad_enabled, sizeof(_prefs->cad_enabled));                       // 294
-    // next: 295
+    file.write((uint8_t *)&_prefs->ota_timeout_mins, sizeof(_prefs->ota_timeout_mins));             // 295
+    // next: 297
 
     file.close();
   }
@@ -246,7 +275,7 @@ void CommonCLI::handleCommand(uint32_t sender_timestamp, char* command, char* re
         strcpy(reply, "ERR: clock cannot go backwards");
       }
     } else if (memcmp(command, "start ota", 9) == 0) {
-      if (!_board->startOTAUpdate(_prefs->node_name, reply)) {
+      if (!_board->startOTAUpdate(_prefs->node_name, reply, _prefs->ota_timeout_mins)) {
         strcpy(reply, "Error");
       }
     } else if (memcmp(command, "clock", 5) == 0) {
@@ -522,6 +551,19 @@ void CommonCLI::handleSetCmd(uint32_t sender_timestamp, char* command, char* rep
     _prefs->allow_read_only = memcmp(&config[16], "on", 2) == 0;
     savePrefs();
     strcpy(reply, "OK");
+  } else if (memcmp(config, "ota.timeout ", 12) == 0) {
+    uint32_t mins = 0;
+    if (!parseUnsignedDecimal(&config[12], mins)) {
+      strcpy(reply, "Error: timeout must be minutes");
+      return;
+    }
+    if (mins > MAX_OTA_TIMEOUT_MINS) {
+      sprintf(reply, "Error: timeout range is 0-%d minutes", MAX_OTA_TIMEOUT_MINS);
+    } else {
+      _prefs->ota_timeout_mins = (uint16_t)mins;
+      savePrefs();
+      strcpy(reply, mins == 0 ? "OK - OTA timeout disabled" : "OK");
+    }
   } else if (memcmp(config, "flood.advert.interval ", 22) == 0) {
     int hours = _atoi(&config[22]);
     if ((hours > 0 && hours < 3) || (hours > 168)) {
@@ -818,6 +860,8 @@ void CommonCLI::handleGetCmd(uint32_t sender_timestamp, char* command, char* rep
     sprintf(reply, "> %d", (uint32_t) _prefs->multi_acks);
   } else if (memcmp(config, "allow.read.only", 15) == 0) {
     sprintf(reply, "> %s", _prefs->allow_read_only ? "on" : "off");
+  } else if (memcmp(config, "ota.timeout", 11) == 0) {
+    sprintf(reply, "> %d", (uint32_t)_prefs->ota_timeout_mins);
   } else if (memcmp(config, "flood.advert.interval", 21) == 0) {
     sprintf(reply, "> %d", ((uint32_t) _prefs->flood_advert_interval));
   } else if (memcmp(config, "advert.interval", 15) == 0) {

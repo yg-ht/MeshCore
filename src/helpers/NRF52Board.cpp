@@ -7,6 +7,39 @@
 #include "MeshCoreNrf52Dfu.h"
 
 static MeshCoreNrf52Dfu bledfu;
+static SoftwareTimer ota_timeout_timer;
+static bool ota_timeout_timer_begun = false;
+
+static void ota_timeout_callback(TimerHandle_t timer) {
+  (void)timer;
+  MESH_DEBUG_PRINTLN("OTA idle timeout expired, rebooting");
+  NVIC_SystemReset();
+}
+
+void meshcore_nrf52_cancel_ota_timeout() {
+  if (ota_timeout_timer_begun) {
+    ota_timeout_timer.stop();
+  }
+}
+
+static void start_ota_timeout(uint32_t timeout_mins) {
+  // A zero timeout is an explicit operator choice to leave OTA mode unlimited.
+  if (timeout_mins == 0) {
+    meshcore_nrf52_cancel_ota_timeout();
+    return;
+  }
+
+  uint32_t timeout_ms = timeout_mins * 60UL * 1000UL;
+
+  if (!ota_timeout_timer_begun) {
+    ota_timeout_timer.begin(timeout_ms, ota_timeout_callback, NULL, false);
+    ota_timeout_timer_begun = true;
+  } else {
+    ota_timeout_timer.setPeriod(timeout_ms);
+  }
+
+  ota_timeout_timer.start();
+}
 
 static void connect_callback(uint16_t conn_handle) {
   (void)conn_handle;
@@ -318,7 +351,7 @@ bool NRF52Board::getBootloaderVersion(char* out, size_t max_len) {
     return false;
 }
 
-bool NRF52Board::startOTAUpdate(const char *id, char reply[]) {
+bool NRF52Board::startOTAUpdate(const char *id, char reply[], uint32_t timeout_mins) {
   // Config the peripheral connection with maximum bandwidth
   // more SRAM required by SoftDevice
   // Note: All config***() function must be called before begin()
@@ -356,6 +389,7 @@ bool NRF52Board::startOTAUpdate(const char *id, char reply[]) {
   Bluefruit.Advertising.setInterval(32, 244); // in unit of 0.625 ms
   Bluefruit.Advertising.setFastTimeout(30);   // number of seconds in fast mode
   Bluefruit.Advertising.start(0);             // 0 = Don't stop advertising after n seconds
+  start_ota_timeout(timeout_mins);
 
   uint8_t mac_addr[6];
   memset(mac_addr, 0, sizeof(mac_addr));

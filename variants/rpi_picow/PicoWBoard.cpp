@@ -37,6 +37,9 @@ void PicoWBoard::begin() {
   delay(10);   // give sx1262 some time to power up
 }
 
-bool PicoWBoard::startOTAUpdate(const char* id, char reply[]) {
+bool PicoWBoard::startOTAUpdate(const char* id, char reply[], uint32_t timeout_mins) {
+  (void)id;
+  (void)reply;
+  (void)timeout_mins;
   return false;
 }

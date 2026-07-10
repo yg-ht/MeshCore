@@ -10,7 +10,8 @@
 
 #include <SPIFFS.h>
 
-bool ESP32Board::startOTAUpdate(const char* id, char reply[]) {
+bool ESP32Board::startOTAUpdate(const char* id, char reply[], uint32_t timeout_mins) {
+  (void)timeout_mins;
   inhibit_sleep = true;   // prevent sleep during OTA
   WiFi.softAP("MeshCore-OTA", NULL);
 
@@ -39,7 +40,10 @@ bool ESP32Board::startOTAUpdate(const char* id, char reply[]) {
 }
 
 #else
-bool ESP32Board::startOTAUpdate(const char* id, char reply[]) {
+bool ESP32Board::startOTAUpdate(const char* id, char reply[], uint32_t timeout_mins) {
+  (void)id;
+  (void)reply;
+  (void)timeout_mins;
   return false; // not supported
 }
 #endif

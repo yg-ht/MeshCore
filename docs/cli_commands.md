@@ -73,6 +73,8 @@ This document provides an overview of CLI commands that can be sent to MeshCore 
 **Usage:**
 - `start ota`
 
+**Note:** On nRF52 devices, OTA mode returns to normal firmware if no DFU update starts before the configured OTA timeout.
+
 ---
 
 ### Erase/Factory Reset
@@ -278,6 +280,22 @@ This document provides an overview of CLI commands that can be sent to MeshCore 
 ---
 
 ### System
+
+#### View or change the OTA idle timeout
+**Usage:**
+- `get ota.timeout`
+- `set ota.timeout <minutes>`
+
+**Parameters:**
+- `minutes`: Timeout in minutes. Use `0` to disable the idle timeout.
+
+**Default:** `10`
+
+**Range:** `0-240`
+
+**Note:** The timeout is enforced for nRF52 BLE OTA mode before DFU starts.
+
+---
 
 #### View or change this node's name
 **Usage:**
