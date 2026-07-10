@@ -25,6 +25,9 @@ void RAK11310Board::begin() {
   delay(10); // give sx1262 some time to power up
 }
 
-bool RAK11310Board::startOTAUpdate(const char *id, char reply[]) {
+bool RAK11310Board::startOTAUpdate(const char *id, char reply[], uint32_t timeout_mins) {
+  (void)id;
+  (void)reply;
+  (void)timeout_mins;
   return false;
 }

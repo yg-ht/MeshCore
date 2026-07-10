@@ -750,6 +750,7 @@ SensorMesh::SensorMesh(mesh::MainBoard& board, mesh::Radio& radio, mesh::Millise
   _prefs.noise_calib_window_secs = DEFAULT_NOISE_CALIB_WINDOW_SECS;
   _prefs.noise_clamp_low_dbm = DEFAULT_NOISE_CLAMP_LOW_DBM;
   _prefs.noise_clamp_high_dbm = DEFAULT_NOISE_CLAMP_HIGH_DBM;
+  _prefs.ota_timeout_mins = 10;       // reboot if OTA mode is idle for 10 minutes
 
   // GPS defaults
   _prefs.gps_enabled = 0;

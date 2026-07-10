@@ -41,5 +41,10 @@ public:
   }
 #endif
 
-  bool startOTAUpdate(const char* id, char reply[]) override { return false; };
+  bool startOTAUpdate(const char* id, char reply[], uint32_t timeout_mins) override {
+    (void)id;
+    (void)reply;
+    (void)timeout_mins;
+    return false;
+  };
 };

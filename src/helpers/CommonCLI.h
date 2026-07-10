@@ -87,6 +87,7 @@ struct NodePrefs { // persisted to file
   uint16_t noise_calib_window_secs;
   int16_t noise_clamp_low_dbm;
   int16_t noise_clamp_high_dbm;
+  uint16_t ota_timeout_mins; // minutes to wait in OTA mode before rebooting, 0 disables timeout
 };
 
 class CommonCLICallbacks {

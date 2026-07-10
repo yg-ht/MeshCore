@@ -85,7 +85,7 @@ public:
   virtual void reboot() override { NVIC_SystemReset(); }
   virtual void powerOff() override;
   virtual bool getBootloaderVersion(char* version, size_t max_len) override;
-  virtual bool startOTAUpdate(const char *id, char reply[]) override;
+  virtual bool startOTAUpdate(const char *id, char reply[], uint32_t timeout_mins) override;
   virtual void sleep(uint32_t secs) override;
   bool isExternalPowered() override;
 
