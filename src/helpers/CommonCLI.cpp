@@ -54,6 +54,42 @@ static bool parseCADTimeoutPolicy(const char* value, uint8_t& policy) {
   return false;
 }
 
+static bool parseBoundedUint16(const char* sp, uint16_t max_value, uint16_t& out) {
+  // Require at least one decimal digit so empty values are never accepted as 0.
+  if (*sp < '0' || *sp > '9') {
+    return false;
+  }
+
+  // Accumulate in the target-width type and reject before overflow/range wrap.
+  uint16_t n = 0;
+  while (*sp >= '0' && *sp <= '9') {
+    uint8_t digit = (uint8_t)(*sp++ - '0');
+    if (n > max_value / 10U || (n == max_value / 10U && digit > max_value % 10U)) {
+      return false;
+    }
+    n = (uint16_t)(n * 10U + digit);
+  }
+
+  // Reject trailing text so partially numeric values are not silently accepted.
+  if (*sp != 0) {
+    return false;
+  }
+
+  out = n;
+  return true;
+}
+
+static bool parseBoundedUint8(const char* sp, uint8_t max_value, uint8_t& out) {
+  // Parse via the uint16 helper, then narrow only after the range is proven.
+  uint16_t tmp;
+  if (!parseBoundedUint16(sp, max_value, tmp)) {
+    return false;
+  }
+
+  out = (uint8_t)tmp;
+  return true;
+}
+
 void CommonCLI::loadPrefs(FILESYSTEM* fs) {
   if (fs->exists("/com_prefs")) {
     loadPrefsInt(fs, "/com_prefs");   // new filename
@@ -728,8 +764,8 @@ void CommonCLI::handleSetCmd(uint32_t sender_timestamp, char* command, char* rep
       strcpy(reply, "Error, must be defer, drop, or force");
     }
   } else if (memcmp(config, "cad.max.defer ", 14) == 0) {
-    uint16_t seconds = _atoi(&config[14]);
-    if (seconds <= 3600) {
+    uint16_t seconds = 0;
+    if (parseBoundedUint16(&config[14], 3600, seconds)) {
       _prefs->cad_max_defer_secs = seconds;
       savePrefs();
       strcpy(reply, "OK");
@@ -737,9 +773,9 @@ void CommonCLI::handleSetCmd(uint32_t sender_timestamp, char* command, char* rep
       strcpy(reply, "Error, must be 0-3600");
     }
   } else if (memcmp(config, "cad.max.timeouts ", 17) == 0) {
-    uint16_t count = _atoi(&config[17]);
-    if (count <= 255) {
-      _prefs->cad_max_timeouts = (uint8_t)count;
+    uint8_t count = 0;
+    if (parseBoundedUint8(&config[17], 255, count)) {
+      _prefs->cad_max_timeouts = count;
       savePrefs();
       strcpy(reply, "OK");
     } else {
