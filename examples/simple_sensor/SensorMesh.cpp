@@ -751,6 +751,7 @@ SensorMesh::SensorMesh(mesh::MainBoard& board, mesh::Radio& radio, mesh::Millise
   _prefs.noise_clamp_low_dbm = DEFAULT_NOISE_CLAMP_LOW_DBM;
   _prefs.noise_clamp_high_dbm = DEFAULT_NOISE_CLAMP_HIGH_DBM;
   _prefs.ota_timeout_mins = 10;       // reboot if OTA mode is idle for 10 minutes
+  _prefs.ota_timeout_reserved = 0;     // stored preference padding after uint8 timeout
 
   // GPS defaults
   _prefs.gps_enabled = 0;

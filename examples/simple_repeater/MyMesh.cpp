@@ -1346,6 +1346,7 @@ MyMesh::MyMesh(mesh::MainBoard &board, mesh::Radio &radio, mesh::MillisecondCloc
   _prefs.noise_clamp_low_dbm = DEFAULT_NOISE_CLAMP_LOW_DBM;
   _prefs.noise_clamp_high_dbm = DEFAULT_NOISE_CLAMP_HIGH_DBM;
   _prefs.ota_timeout_mins = 10;      // reboot if OTA mode is idle for 10 minutes
+  _prefs.ota_timeout_reserved = 0;    // stored preference padding after uint8 timeout
   // Time sync is opt-in and remains disabled until all authority fields are set.
   _prefs.time_sync_enabled = 0;       // opt-in authenticated time sync
   // Default to a conservative one-hour forward step after the clock is initialised.
