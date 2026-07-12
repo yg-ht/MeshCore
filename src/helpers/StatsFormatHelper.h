@@ -14,9 +14,10 @@ class StatsFormatHelper {
 
   enum { CLI_REPLY_LIMIT = 160 };
 
-  static bool appendField(char*& out, size_t& remaining, const char* key, uint32_t count) {
+  static bool appendField(char*& out, size_t& remaining, const char* key, int32_t value) {
     char field[64];
-    snprintf(field, sizeof(field), ",\"%s\":%u", key, count);
+    const char* separator = out[-1] == '{' ? "" : ",";
+    snprintf(field, sizeof(field), "%s\"%s\":%ld", separator, key, (long)value);
     size_t len = strlen(field);
     if (len + 1 > remaining) {
       return false;
@@ -29,44 +30,44 @@ class StatsFormatHelper {
 
   static const PacketErrorStatus* findPacketErrorStatus(int16_t code) {
     static const PacketErrorStatus statuses[] = {
-      { RADIOLIB_ERR_PACKET_TOO_LONG, "packet_too_long", true },
-      { RADIOLIB_ERR_TX_TIMEOUT, "tx_timeout", true },
-      { RADIOLIB_ERR_RX_TIMEOUT, "rx_timeout", true },
-      { RADIOLIB_ERR_CRC_MISMATCH, "crc_mismatch", true },
-      { RADIOLIB_ERR_LORA_HEADER_DAMAGED, "lora_header_damaged", true },
-      { RADIOLIB_ERR_PACKET_TOO_SHORT, "packet_too_short", true },
+      { RADIOLIB_ERR_PACKET_TOO_LONG, "pkt_long", true },
+      { RADIOLIB_ERR_TX_TIMEOUT, "tx_to", true },
+      { RADIOLIB_ERR_RX_TIMEOUT, "rx_to", true },
+      { RADIOLIB_ERR_CRC_MISMATCH, "crc", true },
+      { RADIOLIB_ERR_LORA_HEADER_DAMAGED, "hdr_bad", true },
+      { RADIOLIB_ERR_PACKET_TOO_SHORT, "pkt_short", true },
 
-      { RADIOLIB_ERR_UNKNOWN, "unknown_error", false },
-      { RADIOLIB_ERR_CHIP_NOT_FOUND, "chip_not_found", false },
-      { RADIOLIB_ERR_MEMORY_ALLOCATION_FAILED, "memory_allocation_failed", false },
-      { RADIOLIB_ERR_INVALID_BANDWIDTH, "invalid_bandwidth", false },
-      { RADIOLIB_ERR_INVALID_SPREADING_FACTOR, "invalid_spreading_factor", false },
-      { RADIOLIB_ERR_INVALID_CODING_RATE, "invalid_coding_rate", false },
-      { RADIOLIB_ERR_INVALID_BIT_RANGE, "invalid_bit_range", false },
-      { RADIOLIB_ERR_INVALID_FREQUENCY, "invalid_frequency", false },
-      { RADIOLIB_ERR_INVALID_OUTPUT_POWER, "invalid_output_power", false },
-      { RADIOLIB_ERR_SPI_WRITE_FAILED, "spi_write_failed", false },
-      { RADIOLIB_ERR_INVALID_CURRENT_LIMIT, "invalid_current_limit", false },
-      { RADIOLIB_ERR_INVALID_PREAMBLE_LENGTH, "invalid_preamble_length", false },
-      { RADIOLIB_ERR_INVALID_GAIN, "invalid_gain", false },
-      { RADIOLIB_ERR_WRONG_MODEM, "wrong_modem", false },
-      { RADIOLIB_ERR_INVALID_NUM_SAMPLES, "invalid_num_samples", false },
-      { RADIOLIB_ERR_INVALID_RSSI_OFFSET, "invalid_rssi_offset", false },
-      { RADIOLIB_ERR_INVALID_ENCODING, "invalid_encoding", false },
+      { RADIOLIB_ERR_UNKNOWN, "unk", false },
+      { RADIOLIB_ERR_CHIP_NOT_FOUND, "no_chip", false },
+      { RADIOLIB_ERR_MEMORY_ALLOCATION_FAILED, "no_mem", false },
+      { RADIOLIB_ERR_INVALID_BANDWIDTH, "bad_bw", false },
+      { RADIOLIB_ERR_INVALID_SPREADING_FACTOR, "bad_sf", false },
+      { RADIOLIB_ERR_INVALID_CODING_RATE, "bad_cr", false },
+      { RADIOLIB_ERR_INVALID_BIT_RANGE, "bad_bit", false },
+      { RADIOLIB_ERR_INVALID_FREQUENCY, "bad_freq", false },
+      { RADIOLIB_ERR_INVALID_OUTPUT_POWER, "bad_pwr", false },
+      { RADIOLIB_ERR_SPI_WRITE_FAILED, "spi_wr", false },
+      { RADIOLIB_ERR_INVALID_CURRENT_LIMIT, "bad_curr", false },
+      { RADIOLIB_ERR_INVALID_PREAMBLE_LENGTH, "bad_pre", false },
+      { RADIOLIB_ERR_INVALID_GAIN, "bad_gain", false },
+      { RADIOLIB_ERR_WRONG_MODEM, "modem", false },
+      { RADIOLIB_ERR_INVALID_NUM_SAMPLES, "bad_samp", false },
+      { RADIOLIB_ERR_INVALID_RSSI_OFFSET, "bad_rssi_off", false },
+      { RADIOLIB_ERR_INVALID_ENCODING, "bad_enc", false },
       { RADIOLIB_ERR_UNSUPPORTED, "unsupported", false },
-      { RADIOLIB_ERR_INVALID_DIO_PIN, "invalid_dio_pin", false },
-      { RADIOLIB_ERR_INVALID_RSSI_THRESHOLD, "invalid_rssi_threshold", false },
-      { RADIOLIB_ERR_NULL_POINTER, "null_pointer", false },
-      { RADIOLIB_ERR_INVALID_IRQ, "invalid_irq", false },
+      { RADIOLIB_ERR_INVALID_DIO_PIN, "bad_dio", false },
+      { RADIOLIB_ERR_INVALID_RSSI_THRESHOLD, "bad_rssi_thr", false },
+      { RADIOLIB_ERR_NULL_POINTER, "null", false },
+      { RADIOLIB_ERR_INVALID_IRQ, "bad_irq", false },
 
-      { RADIOLIB_ERR_INVALID_CRC_CONFIGURATION, "invalid_crc_configuration", false },
-      { RADIOLIB_ERR_INVALID_TCXO_VOLTAGE, "invalid_tcxo_voltage", false },
-      { RADIOLIB_ERR_INVALID_MODULATION_PARAMETERS, "invalid_modulation_parameters", false },
-      { RADIOLIB_ERR_SPI_CMD_TIMEOUT, "spi_cmd_timeout", false },
-      { RADIOLIB_ERR_SPI_CMD_INVALID, "spi_cmd_invalid", false },
-      { RADIOLIB_ERR_SPI_CMD_FAILED, "spi_cmd_failed", false },
-      { RADIOLIB_ERR_INVALID_SLEEP_PERIOD, "invalid_sleep_period", false },
-      { RADIOLIB_ERR_INVALID_RX_PERIOD, "invalid_rx_period", false },
+      { RADIOLIB_ERR_INVALID_CRC_CONFIGURATION, "bad_crc_cfg", false },
+      { RADIOLIB_ERR_INVALID_TCXO_VOLTAGE, "bad_tcxo", false },
+      { RADIOLIB_ERR_INVALID_MODULATION_PARAMETERS, "bad_mod", false },
+      { RADIOLIB_ERR_SPI_CMD_TIMEOUT, "spi_to", false },
+      { RADIOLIB_ERR_SPI_CMD_INVALID, "spi_bad", false },
+      { RADIOLIB_ERR_SPI_CMD_FAILED, "spi_fail", false },
+      { RADIOLIB_ERR_INVALID_SLEEP_PERIOD, "bad_sleep", false },
+      { RADIOLIB_ERR_INVALID_RX_PERIOD, "bad_rx", false },
     };
 
     for (size_t i = 0; i < sizeof(statuses) / sizeof(statuses[0]); i++) {
@@ -134,37 +135,26 @@ public:
 
   template<typename RadioDriverType>
   static void formatPacketErrorStats(char* reply, RadioDriverType& driver, bool message_errors) {
-    uint32_t total = 0;
-    int16_t last = driver.getLastPacketError();
     char* out = reply;
     size_t remaining = CLI_REPLY_LIMIT;
     bool truncated = false;
 
-    if (message_errors != isMessagePacketError(last)) {
-      last = RADIOLIB_ERR_NONE;
-    }
-
-    for (uint8_t i = 0; i < driver.getPacketErrorStatusCount(); i++) {
-      int16_t code;
-      uint32_t count;
-      if (!driver.getPacketErrorStatus(i, &code, &count)) {
-        continue;
-      }
-
-      const PacketErrorStatus* status = findPacketErrorStatus(code);
-      bool is_message = status != NULL && status->is_message_error;
-      if (message_errors == is_message) {
-        total += count;
-      }
-    }
-
-    int written = snprintf(out, remaining, "{\"total\":%u,\"last\":%d", total, (int)last);
+    int written = snprintf(out, remaining, "{");
     if (written < 0 || (size_t)written >= remaining) {
       strcpy(reply, "{\"error\":\"reply_too_short\"}");
       return;
     }
     out += written;
     remaining -= written;
+
+    if (message_errors) {
+      if (!appendField(out, remaining, "rssi", (int32_t)driver.getLastRSSI())) {
+        truncated = true;
+      }
+      if (!appendField(out, remaining, "snr", (int32_t)driver.getLastSNR())) {
+        truncated = true;
+      }
+    }
 
     for (uint8_t i = 0; i < driver.getPacketErrorStatusCount(); i++) {
       int16_t code;
@@ -185,7 +175,7 @@ public:
       char unknown_key[16];
       const char* key = status ? status->key : unknown_key;
       if (status == NULL) {
-        snprintf(unknown_key, sizeof(unknown_key), "code_%d", (int)code);
+        snprintf(unknown_key, sizeof(unknown_key), "c%d", (int)code);
       }
 
       if (!appendField(out, remaining, key, count)) {
