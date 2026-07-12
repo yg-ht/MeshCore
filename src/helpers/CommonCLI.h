@@ -65,7 +65,8 @@ struct NodePrefs { // persisted to file
   uint8_t path_hash_mode;   // which path mode to use when sending
   uint8_t loop_detect;
   uint8_t cad_enabled;      // hardware Channel Activity Detection before TX (boolean)
-  uint16_t ota_timeout_mins; // minutes to wait in OTA mode before rebooting, 0 disables timeout
+  uint8_t ota_timeout_mins; // minutes to wait in OTA mode before rebooting, 0 disables timeout
+  uint8_t ota_timeout_reserved; // preserves stored preference layout after shrinking timeout
 };
 
 class CommonCLICallbacks {

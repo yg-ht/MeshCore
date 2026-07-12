@@ -894,6 +894,7 @@ MyMesh::MyMesh(mesh::MainBoard &board, mesh::Radio &radio, mesh::MillisecondCloc
   _prefs.interference_threshold = 0; // disabled
   _prefs.cad_enabled = 0;            // hardware CAD before TX (off by default; 'set cad on')
   _prefs.ota_timeout_mins = 10;      // reboot if OTA mode is idle for 10 minutes
+  _prefs.ota_timeout_reserved = 0;    // stored preference padding after uint8 timeout
 
   // bridge defaults
   _prefs.bridge_enabled = 1;    // enabled

@@ -22,22 +22,39 @@ static uint32_t _atoi(const char* sp) {
   return n;
 }
 
-static bool parseUnsignedDecimal(const char* sp, uint32_t& out) {
+static bool parseBoundedUint16(const char* sp, uint16_t max_value, uint16_t& out) {
+  // Require at least one decimal digit so empty values are never accepted as 0.
   if (*sp < '0' || *sp > '9') {
     return false;
   }
 
-  uint32_t n = 0;
+  // Accumulate in the target-width type and reject before overflow/range wrap.
+  uint16_t n = 0;
   while (*sp >= '0' && *sp <= '9') {
-    n *= 10;
-    n += (*sp++ - '0');
+    uint8_t digit = (uint8_t)(*sp++ - '0');
+    if (n > max_value / 10U || (n == max_value / 10U && digit > max_value % 10U)) {
+      return false;
+    }
+    n = (uint16_t)(n * 10U + digit);
   }
 
+  // Reject trailing text so partially numeric values are not silently accepted.
   if (*sp != 0) {
     return false;
   }
 
   out = n;
+  return true;
+}
+
+static bool parseBoundedUint8(const char* sp, uint8_t max_value, uint8_t& out) {
+  // Parse via the uint16 helper, then narrow only after the range is proven.
+  uint16_t tmp;
+  if (!parseBoundedUint16(sp, max_value, tmp)) {
+    return false;
+  }
+
+  out = (uint8_t)tmp;
   return true;
 }
 
@@ -116,6 +133,7 @@ void CommonCLI::loadPrefsInt(FILESYSTEM* fs, const char* filename) {
     file.read((uint8_t *)&_prefs->radio_fem_rxgain, sizeof(_prefs->radio_fem_rxgain));             // 293
     file.read((uint8_t *)&_prefs->cad_enabled, sizeof(_prefs->cad_enabled));                       // 294
     file.read((uint8_t *)&_prefs->ota_timeout_mins, sizeof(_prefs->ota_timeout_mins));             // 295
+    file.read((uint8_t *)&_prefs->ota_timeout_reserved, sizeof(_prefs->ota_timeout_reserved));     // 296
     // next: 297
 
     // sanitise bad pref values
@@ -153,6 +171,7 @@ void CommonCLI::loadPrefsInt(FILESYSTEM* fs, const char* filename) {
     if (_prefs->ota_timeout_mins > MAX_OTA_TIMEOUT_MINS) {
       _prefs->ota_timeout_mins = DEFAULT_OTA_TIMEOUT_MINS;
     }
+    _prefs->ota_timeout_reserved = 0;
 
     file.close();
   }
@@ -219,6 +238,7 @@ void CommonCLI::savePrefs(FILESYSTEM* fs) {
     file.write((uint8_t *)&_prefs->radio_fem_rxgain, sizeof(_prefs->radio_fem_rxgain));             // 293
     file.write((uint8_t *)&_prefs->cad_enabled, sizeof(_prefs->cad_enabled));                       // 294
     file.write((uint8_t *)&_prefs->ota_timeout_mins, sizeof(_prefs->ota_timeout_mins));             // 295
+    file.write((uint8_t *)&_prefs->ota_timeout_reserved, sizeof(_prefs->ota_timeout_reserved));     // 296
     // next: 297
 
     file.close();
@@ -552,18 +572,14 @@ void CommonCLI::handleSetCmd(uint32_t sender_timestamp, char* command, char* rep
     savePrefs();
     strcpy(reply, "OK");
   } else if (memcmp(config, "ota.timeout ", 12) == 0) {
-    uint32_t mins = 0;
-    if (!parseUnsignedDecimal(&config[12], mins)) {
-      strcpy(reply, "Error: timeout must be minutes");
+    uint8_t mins = 0;
+    if (!parseBoundedUint8(&config[12], MAX_OTA_TIMEOUT_MINS, mins)) {
+      sprintf(reply, "Error: timeout range is 0-%d minutes", MAX_OTA_TIMEOUT_MINS);
       return;
     }
-    if (mins > MAX_OTA_TIMEOUT_MINS) {
-      sprintf(reply, "Error: timeout range is 0-%d minutes", MAX_OTA_TIMEOUT_MINS);
-    } else {
-      _prefs->ota_timeout_mins = (uint16_t)mins;
-      savePrefs();
-      strcpy(reply, mins == 0 ? "OK - OTA timeout disabled" : "OK");
-    }
+    _prefs->ota_timeout_mins = mins;
+    savePrefs();
+    strcpy(reply, mins == 0 ? "OK - OTA timeout disabled" : "OK");
   } else if (memcmp(config, "flood.advert.interval ", 22) == 0) {
     int hours = _atoi(&config[22]);
     if ((hours > 0 && hours < 3) || (hours > 168)) {
