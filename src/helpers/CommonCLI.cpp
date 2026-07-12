@@ -469,6 +469,10 @@ void CommonCLI::handleCommand(uint32_t sender_timestamp, char* command, char* re
       strcpy(reply, "   EOF");
     } else if (sender_timestamp == 0 && memcmp(command, "stats-packets", 13) == 0 && (command[13] == 0 || command[13] == ' ')) {
       _callbacks->formatPacketStatsReply(reply);
+    } else if (sender_timestamp == 0 && memcmp(command, "stats-packets-err-msg", 21) == 0 && (command[21] == 0 || command[21] == ' ')) {
+      _callbacks->formatPacketMessageErrorStatsReply(reply);
+    } else if (sender_timestamp == 0 && memcmp(command, "stats-packets-err-dev", 21) == 0 && (command[21] == 0 || command[21] == ' ')) {
+      _callbacks->formatPacketDeviceErrorStatsReply(reply);
     } else if (sender_timestamp == 0 && memcmp(command, "stats-radio", 11) == 0 && (command[11] == 0 || command[11] == ' ')) {
       _callbacks->formatRadioStatsReply(reply);
     } else if (sender_timestamp == 0 && memcmp(command, "stats-core", 10) == 0 && (command[10] == 0 || command[10] == ' ')) {

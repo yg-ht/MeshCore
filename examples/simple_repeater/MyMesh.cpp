@@ -1152,6 +1152,14 @@ void MyMesh::formatPacketStatsReply(char *reply) {
                                        getNumRecvFlood(), getNumRecvDirect());
 }
 
+void MyMesh::formatPacketMessageErrorStatsReply(char *reply) {
+  StatsFormatHelper::formatPacketErrorStats(reply, radio_driver, true);
+}
+
+void MyMesh::formatPacketDeviceErrorStatsReply(char *reply) {
+  StatsFormatHelper::formatPacketErrorStats(reply, radio_driver, false);
+}
+
 void MyMesh::saveIdentity(const mesh::LocalIdentity &new_id) {
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
   IdentityStore store(*_fs, "");

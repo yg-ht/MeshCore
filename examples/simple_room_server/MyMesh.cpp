@@ -856,6 +856,14 @@ void MyMesh::formatPacketStatsReply(char *reply) {
                                        getNumRecvFlood(), getNumRecvDirect());
 }
 
+void MyMesh::formatPacketMessageErrorStatsReply(char *reply) {
+  StatsFormatHelper::formatPacketErrorStats(reply, radio_driver, true);
+}
+
+void MyMesh::formatPacketDeviceErrorStatsReply(char *reply) {
+  StatsFormatHelper::formatPacketErrorStats(reply, radio_driver, false);
+}
+
 void MyMesh::handleCommand(uint32_t sender_timestamp, char *command, char *reply) {
   if (region_load_active) {
     if (StrHelper::isBlank(command)) {  // empty/blank line, signal to terminate 'load' operation
