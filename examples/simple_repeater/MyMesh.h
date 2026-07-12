@@ -229,6 +229,8 @@ public:
   void formatRadioStatsReply(char *reply) override;
   void formatNoiseFloorStatsReply(char *reply) override;
   void formatPacketStatsReply(char *reply) override;
+  void formatPacketMessageErrorStatsReply(char *reply) override;
+  void formatPacketDeviceErrorStatsReply(char *reply) override;
   void formatMacCadStatsReply(char *reply) override;
   void formatMacTxStatsReply(char *reply) override;
   void startRegionsLoad() override;

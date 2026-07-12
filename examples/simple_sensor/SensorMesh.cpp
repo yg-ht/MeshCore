@@ -893,6 +893,14 @@ void SensorMesh::formatPacketStatsReply(char *reply) {
                                        getNumRecvFlood(), getNumRecvDirect());
 }
 
+void SensorMesh::formatPacketMessageErrorStatsReply(char *reply) {
+  StatsFormatHelper::formatPacketErrorStats(reply, radio_driver, true);
+}
+
+void SensorMesh::formatPacketDeviceErrorStatsReply(char *reply) {
+  StatsFormatHelper::formatPacketErrorStats(reply, radio_driver, false);
+}
+
 float SensorMesh::getTelemValue(uint8_t channel, uint8_t type) {
   auto buf = telemetry.getBuffer();
   uint8_t size = telemetry.getSize();

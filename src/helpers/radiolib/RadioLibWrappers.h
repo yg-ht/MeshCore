@@ -4,6 +4,13 @@
 #include <RadioLib.h>
 
 class RadioLibWrapper : public mesh::Radio {
+  struct PacketErrorCount {
+    int16_t code;
+    uint32_t count;
+  };
+
+  static const uint8_t MAX_PACKET_ERROR_CODES = 40;
+
 protected:
   PhysicalLayer* _radio;
   mesh::MainBoard* _board;
@@ -13,6 +20,8 @@ protected:
   static constexpr int16_t DEFAULT_NOISE_FLOOR_LOW_BOUND = -125;
   static constexpr int16_t DEFAULT_NOISE_FLOOR_HIGH_BOUND = -80;
   uint32_t n_recv, n_sent, n_recv_errors;
+  PacketErrorCount packet_error_counts[MAX_PACKET_ERROR_CODES];
+  int16_t last_packet_error;
   int16_t _noise_floor, _threshold;
   bool _cad_enabled;
   int16_t _noise_floor_low_bound, _noise_floor_high_bound;
@@ -35,6 +44,7 @@ protected:
   void resetNoiseFloorBatch();
   void idle();
   void startRecv();
+  void recordPacketError(int16_t code);
   bool hasNoiseFloor() const;
   virtual unsigned long getMillis() const;
   void updateLastPacketMetrics(float rssi, float snr) {
@@ -48,6 +58,7 @@ protected:
 public:
   RadioLibWrapper(PhysicalLayer& radio, mesh::MainBoard& board) :
       _radio(&radio), _board(&board), n_recv(0), n_sent(0), n_recv_errors(0),
+      last_packet_error(RADIOLIB_ERR_NONE),
       _noise_floor(0), _threshold(0),
       _noise_floor_low_bound(DEFAULT_NOISE_FLOOR_LOW_BOUND),
       _noise_floor_high_bound(DEFAULT_NOISE_FLOOR_HIGH_BOUND),
@@ -60,7 +71,12 @@ public:
       _noise_floor_calibration_scheduled_at(0),
       _noise_floor_batch_started_at(0), _last_noise_floor_sample_at(0),
       _noise_floor_batch_active(false), _has_last_noise_floor_sample(false),
-      _preamble_sf(0) { }
+      _preamble_sf(0) {
+    for (uint8_t i = 0; i < MAX_PACKET_ERROR_CODES; i++) {
+      packet_error_counts[i].code = RADIOLIB_ERR_NONE;
+      packet_error_counts[i].count = 0;
+    }
+  }
 
   void begin() override;
   virtual void powerOff() { _radio->sleep(); }
@@ -102,7 +118,10 @@ public:
   uint32_t getPacketsRecv() const { return n_recv; }
   uint32_t getPacketsRecvErrors() const { return n_recv_errors; }
   uint32_t getPacketsSent() const { return n_sent; }
-  void resetStats() { n_recv = n_sent = n_recv_errors = 0; }
+  int16_t getLastPacketError() const { return last_packet_error; }
+  uint8_t getPacketErrorStatusCount() const;
+  bool getPacketErrorStatus(uint8_t index, int16_t* code, uint32_t* count) const;
+  void resetStats();
 
   virtual float getLastRSSI() const override { return _last_packet_rssi; }
   virtual float getLastSNR() const override { return _last_packet_snr; }

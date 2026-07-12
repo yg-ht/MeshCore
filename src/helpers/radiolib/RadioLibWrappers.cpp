@@ -326,6 +326,63 @@ mesh::NoiseFloorStats RadioLibWrapper::getNoiseFloorStats() const {
   };
 }
 
+void RadioLibWrapper::recordPacketError(int16_t code) {
+  last_packet_error = code;
+
+  for (uint8_t i = 0; i < MAX_PACKET_ERROR_CODES; i++) {
+    if (packet_error_counts[i].count > 0 && packet_error_counts[i].code == code) {
+      packet_error_counts[i].count++;
+      return;
+    }
+  }
+
+  for (uint8_t i = 0; i < MAX_PACKET_ERROR_CODES; i++) {
+    if (packet_error_counts[i].count == 0) {
+      packet_error_counts[i].code = code;
+      packet_error_counts[i].count = 1;
+      return;
+    }
+  }
+
+  // Keep the aggregate error count exact even if an unexpected number of
+  // distinct RadioLib statuses exceeds the small fixed diagnostics table.
+}
+
+uint8_t RadioLibWrapper::getPacketErrorStatusCount() const {
+  uint8_t count = 0;
+  for (uint8_t i = 0; i < MAX_PACKET_ERROR_CODES; i++) {
+    if (packet_error_counts[i].count > 0) {
+      count++;
+    }
+  }
+  return count;
+}
+
+bool RadioLibWrapper::getPacketErrorStatus(uint8_t index, int16_t* code, uint32_t* count) const {
+  uint8_t found = 0;
+  for (uint8_t i = 0; i < MAX_PACKET_ERROR_CODES; i++) {
+    if (packet_error_counts[i].count == 0) {
+      continue;
+    }
+    if (found == index) {
+      *code = packet_error_counts[i].code;
+      *count = packet_error_counts[i].count;
+      return true;
+    }
+    found++;
+  }
+  return false;
+}
+
+void RadioLibWrapper::resetStats() {
+  n_recv = n_sent = n_recv_errors = 0;
+  last_packet_error = RADIOLIB_ERR_NONE;
+  for (uint8_t i = 0; i < MAX_PACKET_ERROR_CODES; i++) {
+    packet_error_counts[i].code = RADIOLIB_ERR_NONE;
+    packet_error_counts[i].count = 0;
+  }
+}
+
 int RadioLibWrapper::recvRaw(uint8_t* bytes, int sz) {
   int len = 0;
   if (state & STATE_INT_READY) {
@@ -337,6 +394,7 @@ int RadioLibWrapper::recvRaw(uint8_t* bytes, int sz) {
         MESH_DEBUG_PRINTLN("RadioLibWrapper: error: readData(%d)", err);
         len = 0;
         n_recv_errors++;
+        recordPacketError(err);
       } else {
         // Capture packet signal metrics while the completed packet status is
         // still the current radio context. Later instantaneous RSSI sampling

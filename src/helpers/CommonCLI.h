@@ -112,6 +112,12 @@ public:
   virtual void formatRadioStatsReply(char *reply) = 0;
   virtual void formatNoiseFloorStatsReply(char *reply) = 0;
   virtual void formatPacketStatsReply(char *reply) = 0;
+  virtual void formatPacketMessageErrorStatsReply(char *reply) {
+    strcpy(reply, "unsupported");
+  }
+  virtual void formatPacketDeviceErrorStatsReply(char *reply) {
+    strcpy(reply, "unsupported");
+  }
   virtual void formatMacCadStatsReply(char *reply) {
     strcpy(reply, "unsupported");
   }

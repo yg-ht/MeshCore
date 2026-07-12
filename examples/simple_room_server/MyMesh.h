@@ -223,6 +223,8 @@ public:
   void formatRadioStatsReply(char *reply) override;
   void formatNoiseFloorStatsReply(char *reply) override;
   void formatPacketStatsReply(char *reply) override;
+  void formatPacketMessageErrorStatsReply(char *reply) override;
+  void formatPacketDeviceErrorStatsReply(char *reply) override;
   void startRegionsLoad() override;
   bool saveRegions() override;
   void onDefaultRegionChanged(const RegionEntry* r) override;

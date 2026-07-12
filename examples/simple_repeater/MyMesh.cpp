@@ -1218,6 +1218,14 @@ void MyMesh::formatPacketStatsReply(char *reply) {
                                        getNumRecvFlood(), getNumRecvDirect());
 }
 
+void MyMesh::formatPacketMessageErrorStatsReply(char *reply) {
+  StatsFormatHelper::formatPacketErrorStats(reply, radio_driver, true);
+}
+
+void MyMesh::formatPacketDeviceErrorStatsReply(char *reply) {
+  StatsFormatHelper::formatPacketErrorStats(reply, radio_driver, false);
+}
+
 void MyMesh::formatMacCadStatsReply(char *reply) {
   StatsFormatHelper::formatMacCadStats(reply, getMacStats());
 }

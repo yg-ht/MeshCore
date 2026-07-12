@@ -75,6 +75,8 @@ public:
   void formatRadioStatsReply(char *reply) override;
   void formatNoiseFloorStatsReply(char *reply) override;
   void formatPacketStatsReply(char *reply) override;
+  void formatPacketMessageErrorStatsReply(char *reply) override;
+  void formatPacketDeviceErrorStatsReply(char *reply) override;
   void setNoiseFloorCalibration(uint16_t sample_interval_ms, uint16_t max_calib_window_secs) override {
     _radio->setNoiseFloorCalibration(sample_interval_ms, ((uint32_t)max_calib_window_secs) * 1000U);
   }
