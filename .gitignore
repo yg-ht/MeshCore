@@ -18,3 +18,5 @@ compile_commands.json
 venv/
 platformio.local.ini
 Pipfile
+.agents
+.gitignore
