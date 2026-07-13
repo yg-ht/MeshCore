@@ -142,6 +142,8 @@ Examples:
 | `0x0E` | reserved                  | reserved                                     |
 | `0x0F` | `PAYLOAD_TYPE_RAW_CUSTOM` | Custom packet (raw bytes, custom encryption) |
 
+`PAYLOAD_TYPE_TRACE` stores its path hash mode in the low two bits of the trace flags byte. The mode uses the same encoding as ordinary path hashes: `0` means 1-byte hashes, `1` means 2-byte hashes, and `2` means 3-byte hashes. Mode `3` is reserved.
+
 ### Payload Versions
 
 | Value  | Version | Description                                      |
