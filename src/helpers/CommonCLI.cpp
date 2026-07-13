@@ -5,6 +5,7 @@
 #include "TxtDataHelpers.h"
 #include "RadioInitDiagnostics.h"
 #include "TimeSyncAuth.h"
+#include "TimeSyncPrefsLayout.h"
 #include <RTClib.h>
 
 #ifndef BRIDGE_MAX_BAUD
@@ -13,6 +14,13 @@
 
 #define DEFAULT_OTA_TIMEOUT_MINS 10
 #define MAX_OTA_TIMEOUT_MINS 240
+
+static_assert(TIME_SYNC_PREFS_EXTRA_PUBLIC_KEYS_OFFSET ==
+              TIME_SYNC_PREFS_EXTRA_DISPLAY_NAMES_OFFSET + TIME_SYNC_PREFS_EXTRA_DISPLAY_NAMES_SIZE,
+              "time-sync extra public keys must follow extra display names in persisted prefs");
+static_assert(TIME_SYNC_PREFS_NEXT_OFFSET ==
+              TIME_SYNC_PREFS_EXTRA_PUBLIC_KEYS_OFFSET + TIME_SYNC_PREFS_EXTRA_PUBLIC_KEYS_SIZE,
+              "time-sync preference record length must include all extra sources");
 
 // Believe it or not, this std C function is busted on some platforms!
 static uint32_t _atoi(const char* sp) {
@@ -178,7 +186,9 @@ void CommonCLI::loadPrefsInt(FILESYSTEM* fs, const char* filename) {
     file.read((uint8_t *)_prefs->time_sync_display_name, sizeof(_prefs->time_sync_display_name));   // 375
     file.read((uint8_t *)_prefs->time_sync_public_key, sizeof(_prefs->time_sync_public_key));       // 407
     file.read((uint8_t *)&_prefs->time_sync_max_forward_step, sizeof(_prefs->time_sync_max_forward_step)); // 439
-    // next: 443
+    file.read((uint8_t *)_prefs->time_sync_extra_display_names, sizeof(_prefs->time_sync_extra_display_names)); // 443
+    file.read((uint8_t *)_prefs->time_sync_extra_public_keys, sizeof(_prefs->time_sync_extra_public_keys));     // 539
+    // next: 635
 
     // sanitise bad pref values
     _prefs->rx_delay_base = constrain(_prefs->rx_delay_base, 0, 20.0f);
@@ -236,6 +246,9 @@ void CommonCLI::loadPrefsInt(FILESYSTEM* fs, const char* filename) {
     // Force C-string termination in case persisted data filled the buffers.
     _prefs->time_sync_channel_name[sizeof(_prefs->time_sync_channel_name) - 1] = 0;
     _prefs->time_sync_display_name[sizeof(_prefs->time_sync_display_name) - 1] = 0;
+    for (uint8_t i = 0; i < TIME_SYNC_MAX_SOURCES - 1; i++) {
+      _prefs->time_sync_extra_display_names[i][sizeof(_prefs->time_sync_extra_display_names[i]) - 1] = 0;
+    }
 
     file.close();
   }
@@ -317,7 +330,9 @@ void CommonCLI::savePrefs(FILESYSTEM* fs) {
     file.write((uint8_t *)_prefs->time_sync_display_name, sizeof(_prefs->time_sync_display_name));   // 375
     file.write((uint8_t *)_prefs->time_sync_public_key, sizeof(_prefs->time_sync_public_key));       // 407
     file.write((uint8_t *)&_prefs->time_sync_max_forward_step, sizeof(_prefs->time_sync_max_forward_step)); // 439
-    // next: 443
+    file.write((uint8_t *)_prefs->time_sync_extra_display_names, sizeof(_prefs->time_sync_extra_display_names)); // 443
+    file.write((uint8_t *)_prefs->time_sync_extra_public_keys, sizeof(_prefs->time_sync_extra_public_keys));     // 539
+    // next: 635
 
     file.close();
   }
