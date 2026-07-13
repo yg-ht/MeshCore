@@ -50,21 +50,25 @@ DispatcherAction Mesh::onRecvPacket(Packet* pkt) {
       uint8_t flags = pkt->payload[i++];
 
       uint8_t len = pkt->payload_len - i;
-      // path_len*entry_size can exceed 255 (path_len up to 63, entry_size up to 3);
-      // a uint8_t offset would wrap and steer the isHashMatch() read to the wrong place.
       uint8_t hash_size = getTracePathHashSize(flags);
-      uint16_t offset = getTracePathByteOffset(pkt->path_len, flags);
       if (hash_size == 0) {
         MESH_DEBUG_PRINTLN("%s Mesh::onRecvPacket(): unsupported TRACE path hash mode", getLogDateTime());
-      } else if (offset >= len) {   // TRACE has reached end of given path
-        onTraceRecv(pkt, trace_tag, auth_code, flags, pkt->path, &pkt->payload[i], len);
-      } else if (self_id.isHashMatch(&pkt->payload[i + offset], hash_size) && allowPacketForward(pkt) && !_tables->wasSeen(pkt)) {
-        _tables->markSeen(pkt);
-        // append SNR (Not hash!)
-        pkt->path[pkt->path_len++] = (int8_t) (pkt->getSNR()*4);
+      } else if (!isValidTracePathByteLen(len, flags)) {
+        MESH_DEBUG_PRINTLN("%s Mesh::onRecvPacket(): malformed TRACE path length", getLogDateTime());
+      } else {
+        // path_len*entry_size can exceed 255 (path_len up to 63, entry_size up to 3);
+        // a uint8_t offset would wrap and steer the isHashMatch() read to the wrong place.
+        uint16_t offset = getTracePathByteOffset(pkt->path_len, flags);
+        if (offset >= len) {   // TRACE has reached end of given path
+          onTraceRecv(pkt, trace_tag, auth_code, flags, pkt->path, &pkt->payload[i], len);
+        } else if (self_id.isHashMatch(&pkt->payload[i + offset], hash_size) && allowPacketForward(pkt) && !_tables->wasSeen(pkt)) {
+          _tables->markSeen(pkt);
+          // append SNR (Not hash!)
+          pkt->path[pkt->path_len++] = (int8_t) (pkt->getSNR()*4);
 
-        uint32_t d = getDirectRetransmitDelay(pkt);
-        return ACTION_RETRANSMIT_DELAYED(5, d);  // schedule with priority 5 (for now), maybe make configurable?
+          uint32_t d = getDirectRetransmitDelay(pkt);
+          return ACTION_RETRANSMIT_DELAYED(5, d);  // schedule with priority 5 (for now), maybe make configurable?
+        }
       }
     }
     return ACTION_RELEASE;

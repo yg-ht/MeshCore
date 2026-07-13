@@ -23,8 +23,16 @@ TEST(TracePath, ValidatesPathBytesAgainstTraceHashSize) {
   EXPECT_TRUE(isValidTracePathByteLen(12, 2));
   EXPECT_EQ(4u, getTracePathHopCount(12, 2));
 
+  EXPECT_FALSE(isValidTracePathByteLen(4, 2));
   EXPECT_FALSE(isValidTracePathByteLen(13, 2));
   EXPECT_EQ(4u, getTracePathHopCount(13, 2));
+}
+
+TEST(TracePath, KeepsSingleByteTracePathsValid) {
+  EXPECT_TRUE(isValidTracePathByteLen(1, 0));
+  EXPECT_TRUE(isValidTracePathByteLen(2, 0));
+  EXPECT_TRUE(isValidTracePathByteLen(63, 0));
+  EXPECT_EQ(63u, getTracePathHopCount(63, 0));
 }
 
 TEST(TracePath, CalculatesOffsetsForThreeByteTraceHops) {
