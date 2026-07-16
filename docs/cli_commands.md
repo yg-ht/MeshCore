@@ -2,6 +2,29 @@
 
 This document provides an overview of CLI commands that can be sent to MeshCore Repeaters, Room Servers and Sensors.
 
+## Compiled repeater defaults
+
+Private repeater builds can seed selected settings with PlatformIO `build_flags`.
+These values apply only when a device has no persisted value, such as after an
+initial flash or settings erase. Loading an existing `prefs` file takes place
+after initialisation and therefore always overrides the compiled defaults.
+
+```ini
+[repeater_deployment_defaults]
+build_flags =
+  -D REPEATER_DEFAULT_PATH_HASH_MODE=1
+  -D REPEATER_DEFAULT_LOOP_DETECT=1
+  -D REPEATER_DEFAULT_TX_DELAY_FACTOR=0.7f
+  -D REPEATER_DEFAULT_CAD_ENABLED=1
+  -D REPEATER_DEFAULT_FLOOD_ADVERT_INTERVAL=168
+```
+
+Add `${repeater_deployment_defaults.build_flags}` to the `build_flags` of each
+private repeater environment. The accepted values match the corresponding CLI
+commands documented below. Invalid values stop the build with a compiler error.
+These flags affect only the repeater firmware and do not change the stored
+preference format.
+
 ## Navigation
 
 - [Operational](#operational)
