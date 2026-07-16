@@ -1,4 +1,5 @@
 #include "MyMesh.h"
+#include "RepeaterBuildDefaults.h"
 #include <algorithm>
 
 /* ------------------------------ Config -------------------------------- */
@@ -1362,11 +1363,12 @@ MyMesh::MyMesh(mesh::MainBoard &board, mesh::Radio &radio, mesh::MillisecondCloc
   memset(neighbours, 0, sizeof(neighbours));
 #endif
 
-  // defaults
+  // Start with compiled defaults. begin() loads persisted preferences over
+  // these values, so existing device configuration always takes precedence.
   memset(&_prefs, 0, sizeof(_prefs));
   _prefs.airtime_factor = 1.0;
   _prefs.rx_delay_base = 0.0f;   // turn off by default, was 10.0;
-  _prefs.tx_delay_factor = 0.5f; // was 0.25f
+  _prefs.tx_delay_factor = repeater_build_defaults::TX_DELAY_FACTOR;
   _prefs.direct_tx_delay_factor = 0.3f; // was 0.2
   StrHelper::strncpy(_prefs.node_name, ADVERT_NAME, sizeof(_prefs.node_name));
   _prefs.node_lat = ADVERT_LAT;
@@ -1378,12 +1380,14 @@ MyMesh::MyMesh(mesh::MainBoard &board, mesh::Radio &radio, mesh::MillisecondCloc
   _prefs.cr = LORA_CR;
   _prefs.tx_power_dbm = LORA_TX_POWER;
   _prefs.advert_interval = 1;        // default to 2 minutes for NEW installs
-  _prefs.flood_advert_interval = 47; // 47 hours
+  _prefs.flood_advert_interval = repeater_build_defaults::FLOOD_ADVERT_INTERVAL;
   _prefs.flood_max = 64;
   _prefs.flood_max_unscoped = 64;
   _prefs.flood_max_advert = 8;
+  _prefs.path_hash_mode = repeater_build_defaults::PATH_HASH_MODE;
+  _prefs.loop_detect = repeater_build_defaults::LOOP_DETECT;
   _prefs.interference_threshold = 0; // disabled
-  _prefs.cad_enabled = 0;            // hardware CAD before TX (off by default; 'set cad on')
+  _prefs.cad_enabled = repeater_build_defaults::CAD_ENABLED;
   _prefs.cad_timeout_policy = CAD_TIMEOUT_DEFER;
   _prefs.cad_max_defer_secs = DEFAULT_CAD_MAX_DEFER_SECS;
   _prefs.cad_max_timeouts = DEFAULT_CAD_MAX_TIMEOUTS;
