@@ -561,6 +561,10 @@ void setup() {
 
   board.begin();
 
+#ifdef HAS_EXTERNAL_WATCHDOG
+  external_watchdog.begin();
+#endif
+
   radioInitSetBootStage(RADIO_BOOT_STAGE_RADIO_INIT_ENTERED);
   if (!radio_init()) {
     MESH_DEBUG_PRINTLN("Radio init failed!");
@@ -596,4 +600,7 @@ void setup() {
 void loop() {
   the_mesh.loop();
   rtc_clock.tick();
+#ifdef HAS_EXTERNAL_WATCHDOG
+  external_watchdog.loop();
+#endif
 }
