@@ -23,9 +23,10 @@ MeshCore operates over a high-latency, low-throughput radio network assembled by
 
 ## Memory safety and parser validation
 
-- [x] **P0 `ACK-ONLY`: Bound multipart ACK construction.** `Mesh::createMultiAck()` can copy a full-size ACK after its one-byte wrapper and write beyond `Packet::payload`.
+- [ ] **P0 `ACK-ONLY`: Bound multipart ACK construction.** `Mesh::createMultiAck()` can copy a full-size ACK after its one-byte wrapper and write beyond `Packet::payload`.
   - Corrective action: Reject lengths greater than `MAX_PACKET_PAYLOAD - 1` before allocation or copying, and add boundary tests for zero, canonical, maximum and oversized lengths.
   - Design constraint: Preserve the fixed packet payload limit and reject excess data rather than allocating dynamically on memory-constrained nodes.
+  - Status: A reviewed implementation exists on `fix-bound-multipart-ack`, but it is intentionally not merged and this item remains deferred.
 
 - [ ] **P0 `ACK-ONLY`: Bound standalone ACK construction and enforce a canonical wire length.** `Mesh::createAck()` accepts caller-controlled lengths even though ACK consumers use only a four-byte identifier.
   - Corrective action: Define one versioned ACK structure and reject every non-canonical length at creation, receipt and relay boundaries.
