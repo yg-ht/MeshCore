@@ -30,9 +30,8 @@ class Mesh : public Dispatcher {
   MeshTables* _tables;
 
   void removeSelfFromPath(Packet* packet);
-  void routeDirectRecvAcks(Packet* packet, uint32_t delay_millis);
-  //void routeRecvAcks(Packet* packet, uint32_t delay_millis);
-  DispatcherAction forwardMultipartDirect(Packet* pkt);
+  bool unwrapMultipartAck(Packet* packet);
+  DispatcherAction forwardDirectAck(Packet* packet);
 
 protected:
   DispatcherAction onRecvPacket(Packet* pkt) override;

@@ -95,14 +95,10 @@ DispatcherAction Mesh::onRecvPacket(Packet* pkt) {
 
     if (self_id.isHashMatch(pkt->path, pkt->getPathHashSize()) && allowPacketForward(pkt)) {
       if (pkt->getPayloadType() == PAYLOAD_TYPE_MULTIPART) {
-        return forwardMultipartDirect(pkt);
+        if (!unwrapMultipartAck(pkt)) return ACTION_RELEASE;
+        return forwardDirectAck(pkt);
       } else if (pkt->getPayloadType() == PAYLOAD_TYPE_ACK) {
-        if (!_tables->wasSeen(pkt)) {  // don't retransmit!
-          _tables->markSeen(pkt);
-          removeSelfFromPath(pkt);
-          routeDirectRecvAcks(pkt, 0);
-        }
-        return ACTION_RELEASE;
+        return forwardDirectAck(pkt);
       }
 
       if (!_tables->wasSeen(pkt)) {
@@ -305,28 +301,14 @@ DispatcherAction Mesh::onRecvPacket(Packet* pkt) {
       break;
     }
     case PAYLOAD_TYPE_MULTIPART:
-      if (pkt->payload_len > 2) {
-        uint8_t remaining = pkt->payload[0] >> 4;  // num of packets in this multipart sequence still to be sent
-        uint8_t type = pkt->payload[0] & 0x0F;
-
-        if (type == PAYLOAD_TYPE_ACK && pkt->payload_len >= 5) {    // a multipart ACK
-          Packet tmp;
-          tmp.header = pkt->header;
-          tmp.path_len = Packet::copyPath(tmp.path, pkt->path, pkt->path_len);
-          tmp.payload_len = pkt->payload_len - 1;
-          memcpy(tmp.payload, &pkt->payload[1], tmp.payload_len);
-
-          if (!_tables->wasSeen(&tmp)) {
-            _tables->markSeen(&tmp);
-            uint32_t ack_crc;
-            memcpy(&ack_crc, tmp.payload, 4);
-
-            onAckRecv(&tmp, ack_crc);
-            //action = routeRecvPacket(&tmp);  // NOTE: currently not needed, as multipart ACKs not sent Flood
-          }
-        } else {
-          // FUTURE: other multipart types??
-        }
+      // Multipart ACKs and their final ordinary ACK carry the same logical
+      // acknowledgement. Canonicalise both to the ordinary representation so
+      // endpoint delivery and relay deduplication share one packet identity.
+      if (unwrapMultipartAck(pkt) && !_tables->wasSeen(pkt)) {
+        _tables->markSeen(pkt);
+        uint32_t ack_crc;
+        memcpy(&ack_crc, pkt->payload, 4);
+        onAckRecv(pkt, ack_crc);
       }
       break;
 
@@ -363,49 +345,36 @@ DispatcherAction Mesh::routeRecvPacket(Packet* packet) {
   return ACTION_RELEASE;
 }
 
-DispatcherAction Mesh::forwardMultipartDirect(Packet* pkt) {
-  uint8_t remaining = pkt->payload[0] >> 4;  // num of packets in this multipart sequence still to be sent
-  uint8_t type = pkt->payload[0] & 0x0F;
-
-  if (type == PAYLOAD_TYPE_ACK && pkt->payload_len >= 5) {    // a multipart ACK
-    Packet tmp;
-    tmp.header = pkt->header;
-    tmp.path_len = Packet::copyPath(tmp.path, pkt->path, pkt->path_len);
-    tmp.payload_len = pkt->payload_len - 1;
-    memcpy(tmp.payload, &pkt->payload[1], tmp.payload_len);
-
-    if (!_tables->wasSeen(&tmp)) {   // don't retransmit!
-      _tables->markSeen(&tmp);
-      removeSelfFromPath(&tmp);
-      routeDirectRecvAcks(&tmp, ((uint32_t)remaining + 1) * 300);  // expect multipart ACKs 300ms apart (x2)
-    }
+bool Mesh::unwrapMultipartAck(Packet* packet) {
+  if (packet->getPayloadType() != PAYLOAD_TYPE_MULTIPART || packet->payload_len < 5) {
+    return false;
   }
-  return ACTION_RELEASE;
+  if ((packet->payload[0] & 0x0F) != PAYLOAD_TYPE_ACK) {
+    return false;
+  }
+
+  // Remove the multipart metadata without truncating extended ACK payloads.
+  // memmove is required because source and destination overlap by one byte.
+  memmove(packet->payload, &packet->payload[1], packet->payload_len - 1);
+  packet->payload_len--;
+
+  // Preserve the route and payload version while assigning the canonical ACK
+  // type used by ordinary ACKs and Packet::calculatePacketHash().
+  packet->header &= ~(PH_TYPE_MASK << PH_TYPE_SHIFT);
+  packet->header |= PAYLOAD_TYPE_ACK << PH_TYPE_SHIFT;
+  return true;
 }
 
-void Mesh::routeDirectRecvAcks(Packet* packet, uint32_t delay_millis) {
-  if (!packet->isMarkedDoNotRetransmit()) {
-    uint8_t extra = getExtraAckTransmitCount();
-    while (extra > 0) {
-      delay_millis += getDirectRetransmitDelay(packet) + 300;
-      auto a1 = createMultiAck(packet->payload, packet->payload_len, extra);
-      if (a1) {
-        a1->path_len = Packet::copyPath(a1->path, packet->path, packet->path_len);
-        a1->header &= ~PH_ROUTE_MASK;
-        a1->header |= ROUTE_TYPE_DIRECT;
-        sendPacket(a1, 0, delay_millis);
-      }
-      extra--;
-    }
+DispatcherAction Mesh::forwardDirectAck(Packet* packet) {
+  if (_tables->wasSeen(packet)) return ACTION_RELEASE;
 
-    auto a2 = createAck(packet->payload, packet->payload_len);
-    if (a2) {
-      a2->path_len = Packet::copyPath(a2->path, packet->path, packet->path_len);
-      a2->header &= ~PH_ROUTE_MASK;
-      a2->header |= ROUTE_TYPE_DIRECT;
-      sendPacket(a2, 0, delay_millis);
-    }
-  }
+  // One logical ACK gets one local relay transmission. Redundant endpoint
+  // copies share this canonical identity and cannot recursively multiply here.
+  _tables->markSeen(packet);
+  removeSelfFromPath(packet);
+
+  uint32_t delay = getDirectRetransmitDelay(packet);
+  return ACTION_RETRANSMIT_DELAYED(0, delay);
 }
 
 Packet* Mesh::createAdvert(const LocalIdentity& id, const uint8_t* app_data, size_t app_data_len) {
