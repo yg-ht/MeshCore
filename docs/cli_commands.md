@@ -857,6 +857,10 @@ Status output shows whether the consumer is enabled, configured channel, configu
 
 **Default:** `0`
 
+Multi-Acks add bounded redundancy when this node originates a direct ACK.
+Relays collapse all wire copies of the same logical ACK and forward one copy;
+this setting does not multiply ACK traffic originated by other nodes.
+
 ---
 
 #### View or change the flood advert interval
