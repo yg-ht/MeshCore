@@ -139,15 +139,44 @@ public:
 class TestChatMesh final : public BaseChatMesh {
 public:
   int timeout_count = 0;
+  int ack_match_count = 0;
   uint32_t response_timeout = 1000;
+  bool match_ack = false;
+  uint32_t accepted_ack = 0;
+  ContactInfo acknowledged_contact{};
 
   TestChatMesh(TestRadio& radio, TestClock& clock, TestRNG& rng, TestRTC& rtc,
                TestPacketManager& manager, mesh::MeshTables& tables)
       : BaseChatMesh(radio, clock, rng, rtc, manager, tables) {}
 
+  void acceptAck(uint32_t ack) {
+    accepted_ack = ack;
+    match_ack = true;
+  }
+
+  void receiveStandaloneAck(uint32_t ack) {
+    mesh::Packet packet;
+    packet.header = ROUTE_TYPE_DIRECT | (PAYLOAD_TYPE_ACK << PH_TYPE_SHIFT);
+    packet.path_len = 0;
+    packet.payload_len = sizeof(ack);
+    memcpy(packet.payload, &ack, sizeof(ack));
+    onRecvPacket(&packet);
+  }
+
+  void receivePathAck(uint32_t ack) {
+    uint8_t empty_path[1] = {0};
+    onContactPathRecv(acknowledged_contact, empty_path, 0, empty_path, 0,
+                      PAYLOAD_TYPE_ACK, reinterpret_cast<uint8_t*>(&ack), sizeof(ack));
+  }
+
 protected:
   void onDiscoveredContact(ContactInfo&, bool, uint8_t, const uint8_t*) override {}
-  ContactInfo* processAck(const uint8_t*) override { return nullptr; }
+  ContactInfo* processAck(const uint8_t* data) override {
+    if (!match_ack || memcmp(data, &accepted_ack, sizeof(accepted_ack)) != 0) return nullptr;
+    match_ack = false;
+    ack_match_count++;
+    return &acknowledged_contact;
+  }
   void onContactPathUpdated(const ContactInfo&) override {}
   void onMessageRecv(const ContactInfo&, mesh::Packet*, uint32_t, const char*) override {}
   void onCommandDataRecv(const ContactInfo&, mesh::Packet*, uint32_t, const char*) override {}
@@ -236,6 +265,46 @@ TEST_F(AckRetryBackoffTest, CoalescesRetryDuringAckTransitWindow) {
   EXPECT_EQ(first_ack, retry_ack);
   EXPECT_TRUE(manager.outbound.empty());
   EXPECT_LE(retry_timeout, 1000u);
+}
+
+TEST_F(AckRetryBackoffTest, StandaloneAckClearsWaitAndAllowsSameOperationAgain) {
+  uint32_t first_ack;
+  uint32_t first_timeout;
+  ASSERT_EQ(MSG_SEND_SENT_DIRECT, send(0, first_ack, first_timeout));
+  startAndCompleteTransmission();
+
+  mesh.acceptAck(first_ack);
+  mesh.receiveStandaloneAck(first_ack);
+  EXPECT_EQ(1, mesh.ack_match_count);
+
+  clock.now += 1001;
+  mesh.loop();
+  EXPECT_EQ(0, mesh.timeout_count);
+
+  uint32_t next_ack;
+  uint32_t next_timeout;
+  EXPECT_EQ(MSG_SEND_SENT_DIRECT, send(0, next_ack, next_timeout));
+  EXPECT_EQ(1u, manager.outbound.size());
+}
+
+TEST_F(AckRetryBackoffTest, PathEmbeddedAckClearsWaitAndAllowsSameOperationAgain) {
+  uint32_t first_ack;
+  uint32_t first_timeout;
+  ASSERT_EQ(MSG_SEND_SENT_DIRECT, send(0, first_ack, first_timeout));
+  startAndCompleteTransmission();
+
+  mesh.acceptAck(first_ack);
+  mesh.receivePathAck(first_ack);
+  EXPECT_EQ(1, mesh.ack_match_count);
+
+  clock.now += 1001;
+  mesh.loop();
+  EXPECT_EQ(0, mesh.timeout_count);
+
+  uint32_t next_ack;
+  uint32_t next_timeout;
+  EXPECT_EQ(MSG_SEND_SENT_DIRECT, send(0, next_ack, next_timeout));
+  EXPECT_EQ(1u, manager.outbound.size());
 }
 
 TEST_F(AckRetryBackoffTest, DoesNotCoalesceDifferentTextWithReusedTimestamp) {
