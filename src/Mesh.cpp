@@ -4,6 +4,10 @@
 
 namespace mesh {
 
+static const uint32_t ACK_MIN_JITTER_MILLIS = 100;
+static const uint32_t ACK_MAX_JITTER_MILLIS = 2000;
+static const uint32_t ACK_COPY_GUARD_MILLIS = 50;
+
 void Mesh::begin() {
   Dispatcher::begin();
 }
@@ -23,6 +27,42 @@ uint32_t Mesh::getRetransmitDelay(const mesh::Packet* packet) {
 uint32_t Mesh::getDirectRetransmitDelay(const Packet* packet) {
   return 0;  // by default, no delay
 }
+
+uint32_t Mesh::getAckTransmitDelay(const Packet* packet, uint32_t earliest_delay) {
+  uint32_t airtime = _radio->getEstAirtimeFor(packet->getRawLength());
+  uint32_t queue_pressure = _mgr->getOutboundTotal();
+  if (queue_pressure > 4) queue_pressure = 4;
+
+  uint32_t multiplier = 2 + queue_pressure;
+  uint32_t jitter_window = airtime > ACK_MAX_JITTER_MILLIS / multiplier
+                             ? ACK_MAX_JITTER_MILLIS
+                             : airtime * multiplier;
+  if (jitter_window < ACK_MIN_JITTER_MILLIS) jitter_window = ACK_MIN_JITTER_MILLIS;
+  if (jitter_window > ACK_MAX_JITTER_MILLIS) jitter_window = ACK_MAX_JITTER_MILLIS;
+
+  return earliest_delay + _rng->nextInt(0, jitter_window + 1);
+}
+
+uint32_t Mesh::getNextAckTransmitDelay(const Packet* packet, uint32_t previous_delay) {
+  // The preceding copy may have the one-byte multipart wrapper.
+  uint32_t airtime = _radio->getEstAirtimeFor(packet->getRawLength() + 1);
+  return getAckTransmitDelay(packet, previous_delay + airtime + ACK_COPY_GUARD_MILLIS);
+}
+
+uint32_t Mesh::getDirectAckTransmitDelay(Packet* packet, const uint8_t* path, uint8_t path_len,
+                                         uint32_t earliest_delay) {
+  packet->path_len = Packet::copyPath(packet->path, path, path_len);
+  packet->header = (packet->header & ~PH_ROUTE_MASK) | ROUTE_TYPE_DIRECT;
+  return getAckTransmitDelay(packet, earliest_delay);
+}
+
+uint32_t Mesh::getNextDirectAckTransmitDelay(Packet* packet, const uint8_t* path, uint8_t path_len,
+                                             uint32_t previous_delay) {
+  packet->path_len = Packet::copyPath(packet->path, path, path_len);
+  packet->header = (packet->header & ~PH_ROUTE_MASK) | ROUTE_TYPE_DIRECT;
+  return getNextAckTransmitDelay(packet, previous_delay);
+}
+
 uint8_t Mesh::getExtraAckTransmitCount() const {
   return 0;
 }
@@ -373,7 +413,9 @@ DispatcherAction Mesh::forwardDirectAck(Packet* packet) {
   _tables->markSeen(packet);
   removeSelfFromPath(packet);
 
-  uint32_t delay = getDirectRetransmitDelay(packet);
+  // Preserve any firmware-specific direct delay as the earliest slot, then add
+  // fresh local contention jitter without recreating endpoint redundancy.
+  uint32_t delay = getAckTransmitDelay(packet, getDirectRetransmitDelay(packet));
   return ACTION_RETRANSMIT_DELAYED(0, delay);
 }
 

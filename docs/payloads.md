@@ -61,6 +61,8 @@ Appdata Flags
 
 An acknowledgement that a message was received. Note that for returned path messages, an acknowledgement can be sent in the "extra" payload (see [Returned Path](#returned-path)) instead of as a separate acknowledgement packet. CLI commands do not cause acknowledgement responses, neither discrete nor extra.
 
+ACK transmissions retain a short minimum response guard, then add bounded random delay derived from local packet airtime and outbound queue pressure. Redundant copies use fresh jitter and are separated by at least one ACK airtime plus a guard interval. This local scheduling reduces fixed-phase collisions without requiring synchronized clocks or global topology knowledge.
+
 | Field    | Size (bytes) | Description                                                |
 |----------|--------------|------------------------------------------------------------|
 | checksum | 4            | CRC checksum of message timestamp, text, and sender pubkey |

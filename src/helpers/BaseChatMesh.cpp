@@ -41,17 +41,25 @@ mesh::Packet* BaseChatMesh::createSelfAdvert(const char* name, double lat, doubl
 void BaseChatMesh::sendAckTo(const ContactInfo& dest, const uint8_t* ack_hash, uint8_t ack_len) {
   if (dest.out_path_len == OUT_PATH_UNKNOWN) {
     mesh::Packet* ack = createAck(ack_hash, ack_len);
-    if (ack) sendFloodScoped(dest, ack, TXT_ACK_DELAY);
+    if (ack) sendFloodScoped(dest, ack, getAckTransmitDelay(ack, TXT_ACK_DELAY));
   } else {
     uint32_t d = TXT_ACK_DELAY;
+    bool ack_scheduled = false;
     if (getExtraAckTransmitCount() > 0) {
       mesh::Packet* a1 = createMultiAck(ack_hash, ack_len, 1);
-      if (a1) sendDirect(a1, dest.out_path, dest.out_path_len, d);
-      d += 300;
+      if (a1) {
+        d = getDirectAckTransmitDelay(a1, dest.out_path, dest.out_path_len, d);
+        sendDirect(a1, dest.out_path, dest.out_path_len, d);
+        ack_scheduled = true;
+      }
     }
 
     mesh::Packet* a2 = createAck(ack_hash, ack_len);
-    if (a2) sendDirect(a2, dest.out_path, dest.out_path_len, d);
+    if (a2) {
+      d = ack_scheduled ? getNextDirectAckTransmitDelay(a2, dest.out_path, dest.out_path_len, d)
+                        : getDirectAckTransmitDelay(a2, dest.out_path, dest.out_path_len, d);
+      sendDirect(a2, dest.out_path, dest.out_path_len, d);
+    }
   }
 }
 
@@ -249,7 +257,7 @@ void BaseChatMesh::onPeerDataRecv(mesh::Packet* packet, uint8_t type, int sender
         // let this sender know path TO here, so they can use sendDirect(), and ALSO encode the ACK
         mesh::Packet* path = createPathReturn(from.id, secret, packet->path, packet->path_len,
                                                 PAYLOAD_TYPE_ACK, (uint8_t *) &ack_hash, 6);
-        if (path) sendFloodScoped(from, path, TXT_ACK_DELAY);
+        if (path) sendFloodScoped(from, path, getAckTransmitDelay(path, TXT_ACK_DELAY));
       } else {
         sendAckTo(from, ack_hash, 6);
       }
@@ -276,7 +284,7 @@ void BaseChatMesh::onPeerDataRecv(mesh::Packet* packet, uint8_t type, int sender
         // let this sender know path TO here, so they can use sendDirect(), and ALSO encode the ACK
         mesh::Packet* path = createPathReturn(from.id, secret, packet->path, packet->path_len,
                                                 PAYLOAD_TYPE_ACK, (uint8_t *) &ack_hash, 4);
-        if (path) sendFloodScoped(from, path, TXT_ACK_DELAY);
+        if (path) sendFloodScoped(from, path, getAckTransmitDelay(path, TXT_ACK_DELAY));
       } else {
         sendAckTo(from, (uint8_t *) &ack_hash);
       }

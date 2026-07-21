@@ -66,6 +66,26 @@ protected:
   virtual uint32_t getDirectRetransmitDelay(const Packet* packet);
 
   /**
+   * \returns a locally contention-aware delay at or after earliest_delay.
+   *          Jitter is scaled by packet airtime and outbound queue pressure.
+   */
+  uint32_t getAckTransmitDelay(const Packet* packet, uint32_t earliest_delay);
+
+  /**
+   * \returns a delay for a redundant ACK after previous_delay, including an
+   *          airtime guard and fresh contention jitter.
+   */
+  uint32_t getNextAckTransmitDelay(const Packet* packet, uint32_t previous_delay);
+
+  /** Prepare a direct ACK path before calculating its first contention delay. */
+  uint32_t getDirectAckTransmitDelay(Packet* packet, const uint8_t* path, uint8_t path_len,
+                                     uint32_t earliest_delay);
+
+  /** Prepare a direct ACK path before calculating a redundant-copy delay. */
+  uint32_t getNextDirectAckTransmitDelay(Packet* packet, const uint8_t* path, uint8_t path_len,
+                                         uint32_t previous_delay);
+
+  /**
    * \returns  number of extra (Direct) ACK transmissions wanted.
    */
   virtual uint8_t getExtraAckTransmitCount() const;
