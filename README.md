@@ -1,3 +1,41 @@
+# MeshCore Experimental Firmware
+
+> [!WARNING]
+> **Use the `experimental-build` branch. Do not use this repository's `main` or `dev` branches for firmware.** All output firmware files from this repository are produced from `experimental-build`.
+
+## An experimental reliability fork
+
+This repository is becoming an experimental fork of the [original MeshCore firmware repository](https://github.com/meshcore-dev/MeshCore). It is not intended to compete with or replace the original project. Finished changes developed here are submitted, or are being prepared for submission, to the original repository. If they are accepted upstream, the same improvements should eventually become available in the main MeshCore codebase.
+
+The purpose of this fork is to improve **mesh and device reliability**. It can move more quickly, fail fast, and test and adjust based on real-world results. Some testing is performed here, but this code has fundamentally received less testing than firmware from the original repository. Expect a higher risk of regressions and be prepared to report problems or return to upstream firmware.
+
+The scope of `experimental-build` is deliberately narrow:
+
+- Improve message delivery, routing, congestion behaviour, radio diagnostics, recovery, and device stability.
+- Make reliability problems easier to observe, reproduce, and correct.
+- Add no general-purpose features unless they directly make the mesh easier to use or operate reliably.
+- Produce firmware exclusively from `experimental-build`; `main` and `dev` exist for upstream synchronization and development history, not for users to flash.
+
+## Included reliability improvements
+
+The following finished improvement branches are collected in `experimental-build`. Branches marked `UNFINISHED` (including the existing misspelled `UNFINSIHED` prefix) are intentionally excluded. `main`, `dev`, and `experimental-build` are baseline or integration branches, so they are not listed as individual improvements.
+
+| Improvement title | Branch name | Description of the problem | Description of the fix |
+| --- | --- | --- | --- |
+| Radio receive diagnostics | `add-radio-rx-diagnostics` | Packet reception failures were grouped too broadly, making radio and link problems difficult to distinguish in the field. | Adds separate RadioLib receive-error counters and exposes them through compact diagnostic output. |
+| Authenticated repeater time synchronization | `add-repeater-auth-time-sync` | Repeater time updates lacked strong source authentication, channel binding, replay protection, multi-source validation, and deployable defaults. | Adds signed, channel-bound time updates; replay and clock-step checks; multiple configured sources; and compile-time repeater defaults. |
+| Configurable repeater build defaults | `add-repeater-build-defaults` | Operators building many repeaters had to patch source or configure each device manually to apply deployment-specific defaults. | Adds validated compile-time settings for repeater identity, radio, location, and related preferences while preserving upstream defaults when no overrides are supplied. |
+| Contention-aware ACK scheduling | `fix-ack-contention-scheduling` | ACKs from several nodes could be transmitted at nearly the same time, collide on air, and create avoidable duplicate traffic. | Schedules ACKs with airtime-, path-, and queue-aware jitter and treats multipart/final ACK forms as one contended relay transmission. |
+| Congestion-aware ACK retry control | `fix-ack-retry-backoff` | A retry could overlap its still-queued original transmission, begin its timeout too early, or add load while the mesh was already congested. | Tracks the logical send operation, starts the ACK window after local transmission, coalesces premature retries, and applies bounded pressure-aware backoff and timeout estimates. |
+| Direct ACK amplification prevention | `fix-direct-ack-amplification` | Relays could multiply redundant direct ACK copies, consuming airtime without improving logical delivery. | Deduplicates equivalent ACK forms, reuses the received packet while forwarding, and prevents relay copy settings from amplifying direct ACK traffic. |
+| Learned return paths for flood replies | `fix-flood-reply-return-paths` | Replies to flooded requests could ignore an already learned route and generate unnecessary flood traffic. | Returns eligible replies over the learned direct path, reducing airtime and improving reply reliability. |
+| Bounded forced-transmit CAD timeout | `fix-forced-tx-cad-timeout` | Continuous channel activity could defer a queued transmission indefinitely, while oversized timeout values could overflow internal timing. | Adds a configurable CAD deferral deadline, permits transmission after expiry, and rejects timeout values that cannot be represented safely. |
+| Reliable nRF52 OTA reset | `fix-nrf52-ota-reset` | OTA/DFU handoff state could be lost during reset, or an abandoned OTA session could leave a device stuck; oversized timeout settings could also overflow. | Preserves the BLE DFU handoff marker, resets into the nRF52 bootloader reliably, adds an OTA idle timeout, and validates the configured timeout range. |
+| nRF52 radio initialization recovery | `fix-nrf52-radio-init-recovery` | A transient SX126x initialization failure could leave an nRF52 device without a working radio and with insufficient evidence of the preceding boot failure. | Retries recovery from transient radio initialization failures and retains current and previous boot diagnostics. |
+| Brownout and power-failure recovery | `improve-brownout-recovery` | Ambiguous USB/battery readings and power-fail handling could cause false brownout decisions, boot loops, or interfere with OTA on nRF52 devices. | Validates power-source readings, hardens POF lifecycle handling, preserves diagnostic labels, and restores board-specific boot protection. |
+| RSSI and noise-floor stability | `rssi_and_noise_floor_improvements` | Startup outliers, clamped samples, calibration feedback, and stale radio status could corrupt noise-floor estimates and carrier-sense decisions. | Caches per-packet metrics, filters implausible samples, rate-limits and bounds calibration, preserves trusted values during refresh, and exposes calibration diagnostics. |
+| Mesh and MAC statistics instrumentation | `stats-instrumentation` | Queue pressure, duplicate traffic, airtime use, and MAC behaviour were difficult to inspect, which made reliability faults harder to diagnose. | Adds repeater MAC counters and concise CLI reports, and corrects/tests packet-queue peeking used by the instrumentation. |
+
 ## About MeshCore
 
 MeshCore is a lightweight, portable C++ library that enables multi-hop packet routing for embedded projects using LoRa and other packet radios. It is designed for developers who want to create resilient, decentralized communication networks that work without the internet.
