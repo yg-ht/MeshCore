@@ -154,9 +154,10 @@ MeshCore operates over a high-latency, low-throughput radio network assembled by
   - Corrective action: Attach the timer, peer, retry policy and callback to each active transmission record.
   - Design constraint: Per-message state must have a hard local bound and degrade to rejection or queueing when memory is exhausted.
 
-- [ ] **P1 `ACK-ONLY`: Do not start ACK timeout state for CLI data that has no ACK semantics.** `sendCommandData()` starts the generic text ACK timer even though receivers explicitly do not ACK CLI data.
+- [x] **P1 `ACK-ONLY`: Do not start ACK timeout state for CLI data that has no ACK semantics.** `sendCommandData()` starts the generic text ACK timer even though receivers explicitly do not ACK CLI data.
   - Corrective action: Track CLI completion through its response or request identifier, or send it without ACK timeout state.
   - Design constraint: Completion semantics must remain compatible with peers that intentionally provide no ACK and must treat silence as indeterminate where no response is defined.
+  - Completed on `fix-ack-retry-backoff`: command data still reports a conservative transport estimate but no longer creates or overwrites ACK timeout state.
 
 - [ ] **P1 `ACK-ONLY`: Expire locally obsolete queued ACK copies.** Redundant or delayed ACKs remain in the outbound queue after their local usefulness deadline. A relay cannot know with certainty that a remote sender received another copy or moved on.
   - Corrective action: Associate queued ACKs with a local cancellation key and bounded deadline, then remove copies made obsolete by locally observed state or skip them after expiry.
@@ -210,9 +211,10 @@ MeshCore operates over a high-latency, low-throughput radio network assembled by
   - Corrective action: Measure collision rate, queue delay, delivery latency and ACK overlap, then tune the existing bounds or add the smallest useful local signal such as recent channel occupancy, duplicate activity or CAD outcomes.
   - Design constraint: No endpoint can know when every flood branch has completed; only a bounded local estimate is possible.
 
-- [ ] **P1 `ACK-ONLY`: Add congestion-sensitive backoff to application ACK retries.** MAC-level CAD retries are already randomised in `Mesh`, but fixed application retry deadlines can preserve phase relationships after a collision.
+- [x] **P1 `ACK-ONLY`: Add congestion-sensitive backoff to application ACK retries.** MAC-level CAD retries are already randomised in `Mesh`, but fixed application retry deadlines can preserve phase relationships after a collision.
   - Corrective action: Apply bounded exponential or adaptive backoff with fresh jitter to ACK-driven application retries, with a maximum retry age and attempt count. Handle fixed keepalive periods in the separate keepalive item below.
   - Design constraint: Retries remain necessary for unreliable links, and backoff must not grow beyond the application's useful delivery lifetime.
+  - Completed on `fix-ack-retry-backoff`: BaseChat retries use fresh bounded exponential jitter, at most eight attempts and a five-minute operation lifetime.
 
 - [ ] **P1 `ALL-PACKETS`: Bound starvation from strict queue priority while preserving control deadlines.** Direct ACK bursts use priority 0, as does ordinary direct data, while PATH, advert and flood traffic have lower priority. The strict-priority queue has no fairness or ageing, so ACK multiplication can amplify an existing all-packet starvation risk; completely equal scheduling would also be inappropriate for time-sensitive control traffic.
   - Corrective action: Introduce bounded per-class airtime, priority ageing, packet expiry and a protected allowance for route establishment while retaining high priority for ACKs that are still useful.
@@ -251,14 +253,17 @@ MeshCore operates over a high-latency, low-throughput radio network assembled by
 - [ ] **P1 `ALL-PACKETS`: Start delivery timers from confirmed local transmission completion.** Current ACK timeouts begin when the original packet is queued, so queueing and duty-cycle delays consume the response window. Local completion does not reveal downstream route progress.
   - Corrective action: Have the dispatcher report local send completion and derive a conservative response deadline from that timestamp plus an estimated downstream delay budget.
   - Design constraint: Local radio completion is observable, but downstream forwarding is not; the resulting deadline remains an estimate rather than an end-to-end guarantee.
+  - Status: Dispatcher completion and failure hooks now start BaseChat ACK timers from confirmed local transmission; other delivery timers still need migration before this all-packet item is complete.
 
-- [ ] **P1 `ACK-ONLY`: Suppress retries while the original transmission is locally queued and allow for estimated ACK transit.** A timeout can currently create a second application transmission while the first packet is still queued or its ACK may still be traversing the route. Remote in-flight state cannot be known exactly.
+- [x] **P1 `ACK-ONLY`: Suppress retries while the original transmission is locally queued and allow for estimated ACK transit.** A timeout can currently create a second application transmission while the first packet is still queued or its ACK may still be traversing the route. Remote in-flight state cannot be known exactly.
   - Corrective action: Track local transmission state explicitly and apply a bounded late-ACK grace period derived from recent route observations before creating a new attempt.
   - Design constraint: Remote in-flight state is unknowable and silence is ambiguous, so suppression must end after a bounded grace period and permit necessary retries.
+  - Completed on `fix-ack-retry-backoff`: identical BaseChat operations reuse the active ACK token while locally queued or within the ACK window, without allocating another packet.
 
 - [ ] **P1 `ALL-PACKETS`: Include locally known and estimated transport delays in timeout calculation.** Current timeouts do not account for local queue depth, CAD deferral, receive delay, duty-cycle limits, route length or scheduled redundancy. Future delays elsewhere on an unmanaged route cannot be known exactly.
   - Corrective action: Calculate an adaptive deadline from local scheduler state, recent route latency and a bounded safety margin, with conservative defaults when history is absent.
   - Design constraint: Route conditions change without notice; calculations may use only local history and must cap both waiting time and retry age.
+  - Status: BaseChat estimates now include retry scheduling, bounded queue pressure, a CAD allowance and encoded direct-path airtime. Duty-cycle state, receive delay and route history remain outstanding.
 
 - [ ] **P1 `ACK-ONLY`: Keep local receive-side delay within the advertised ACK budget.** Flood ACK or PATH packets can remain in a node's delayed inbound queue longer than application retry intervals, while an end-to-end delay guarantee is impossible across independently configured relays.
   - Corrective action: Bound local delay for time-critical authenticated control responses and include a conservative per-hop delay allowance in sender timeout calculation.

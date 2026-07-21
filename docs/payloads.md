@@ -63,6 +63,8 @@ An acknowledgement that a message was received. Note that for returned path mess
 
 ACK transmissions retain a short minimum response guard, then add bounded random delay derived from local packet airtime and outbound queue pressure. Redundant copies use fresh jitter and are separated by at least one ACK airtime plus a guard interval. This local scheduling reduces fixed-phase collisions without requiring synchronized clocks or global topology knowledge.
 
+BaseChat senders start their ACK response window only after the local radio confirms transmission. A repeated send for the same recipient, timestamp and message is coalesced while the original remains locally queued or its ACK window is active. Later attempts use bounded exponential backoff with fresh jitter, and externally reported timeout estimates include locally observable queue pressure and encoded direct-path airtime. These are local estimates rather than end-to-end delivery guarantees; asymmetric routes and remote queue state remain unknowable.
+
 | Field    | Size (bytes) | Description                                                |
 |----------|--------------|------------------------------------------------------------|
 | checksum | 4            | CRC checksum of message timestamp, text, and sender pubkey |
