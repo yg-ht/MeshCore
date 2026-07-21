@@ -3,6 +3,10 @@
 
 namespace mesh {
 
+static const uint32_t ACK_MIN_JITTER_MILLIS = 100;
+static const uint32_t ACK_MAX_JITTER_MILLIS = 2000;
+static const uint32_t ACK_COPY_GUARD_MILLIS = 50;
+
 void Mesh::begin() {
   Dispatcher::begin();
 }
@@ -22,6 +26,42 @@ uint32_t Mesh::getRetransmitDelay(const mesh::Packet* packet) {
 uint32_t Mesh::getDirectRetransmitDelay(const Packet* packet) {
   return 0;  // by default, no delay
 }
+
+uint32_t Mesh::getAckTransmitDelay(const Packet* packet, uint32_t earliest_delay) {
+  uint32_t airtime = _radio->getEstAirtimeFor(packet->getRawLength());
+  uint32_t queue_pressure = _mgr->getOutboundTotal();
+  if (queue_pressure > 4) queue_pressure = 4;
+
+  uint32_t multiplier = 2 + queue_pressure;
+  uint32_t jitter_window = airtime > ACK_MAX_JITTER_MILLIS / multiplier
+                             ? ACK_MAX_JITTER_MILLIS
+                             : airtime * multiplier;
+  if (jitter_window < ACK_MIN_JITTER_MILLIS) jitter_window = ACK_MIN_JITTER_MILLIS;
+  if (jitter_window > ACK_MAX_JITTER_MILLIS) jitter_window = ACK_MAX_JITTER_MILLIS;
+
+  return earliest_delay + _rng->nextInt(0, jitter_window + 1);
+}
+
+uint32_t Mesh::getNextAckTransmitDelay(const Packet* packet, uint32_t previous_delay) {
+  // The preceding copy may have the one-byte multipart wrapper.
+  uint32_t airtime = _radio->getEstAirtimeFor(packet->getRawLength() + 1);
+  return getAckTransmitDelay(packet, previous_delay + airtime + ACK_COPY_GUARD_MILLIS);
+}
+
+uint32_t Mesh::getDirectAckTransmitDelay(Packet* packet, const uint8_t* path, uint8_t path_len,
+                                         uint32_t earliest_delay) {
+  packet->path_len = Packet::copyPath(packet->path, path, path_len);
+  packet->header = (packet->header & ~PH_ROUTE_MASK) | ROUTE_TYPE_DIRECT;
+  return getAckTransmitDelay(packet, earliest_delay);
+}
+
+uint32_t Mesh::getNextDirectAckTransmitDelay(Packet* packet, const uint8_t* path, uint8_t path_len,
+                                             uint32_t previous_delay) {
+  packet->path_len = Packet::copyPath(packet->path, path, path_len);
+  packet->header = (packet->header & ~PH_ROUTE_MASK) | ROUTE_TYPE_DIRECT;
+  return getNextAckTransmitDelay(packet, previous_delay);
+}
+
 uint8_t Mesh::getExtraAckTransmitCount() const {
   return 0;
 }
@@ -370,7 +410,8 @@ DispatcherAction Mesh::forwardMultipartDirect(Packet* pkt) {
     if (!_tables->wasSeen(&tmp)) {   // don't retransmit!
       _tables->markSeen(&tmp);
       removeSelfFromPath(&tmp);
-      routeDirectRecvAcks(&tmp, ((uint32_t)remaining + 1) * 300);  // expect multipart ACKs 300ms apart (x2)
+      uint32_t airtime = _radio->getEstAirtimeFor(tmp.getRawLength());
+      routeDirectRecvAcks(&tmp, ((uint32_t)remaining + 1) * (airtime + ACK_COPY_GUARD_MILLIS));
     }
   }
   return ACTION_RELEASE;
@@ -378,15 +419,18 @@ DispatcherAction Mesh::forwardMultipartDirect(Packet* pkt) {
 
 void Mesh::routeDirectRecvAcks(Packet* packet, uint32_t delay_millis) {
   if (!packet->isMarkedDoNotRetransmit()) {
+    bool ack_scheduled = false;
     uint8_t extra = getExtraAckTransmitCount();
     while (extra > 0) {
-      delay_millis += getDirectRetransmitDelay(packet) + 300;
       auto a1 = createMultiAck(packet->payload, packet->payload_len, extra);
       if (a1) {
         a1->path_len = Packet::copyPath(a1->path, packet->path, packet->path_len);
         a1->header &= ~PH_ROUTE_MASK;
         a1->header |= ROUTE_TYPE_DIRECT;
+        delay_millis = ack_scheduled ? getNextAckTransmitDelay(a1, delay_millis)
+                                     : getAckTransmitDelay(a1, delay_millis);
         sendPacket(a1, 0, delay_millis);
+        ack_scheduled = true;
       }
       extra--;
     }
@@ -396,6 +440,8 @@ void Mesh::routeDirectRecvAcks(Packet* packet, uint32_t delay_millis) {
       a2->path_len = Packet::copyPath(a2->path, packet->path, packet->path_len);
       a2->header &= ~PH_ROUTE_MASK;
       a2->header |= ROUTE_TYPE_DIRECT;
+      delay_millis = ack_scheduled ? getNextAckTransmitDelay(a2, delay_millis)
+                                   : getAckTransmitDelay(a2, delay_millis);
       sendPacket(a2, 0, delay_millis);
     }
   }

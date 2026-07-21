@@ -708,9 +708,11 @@ void MyMesh::onPeerDataRecv(mesh::Packet *packet, uint8_t type, int sender_idx, 
         mesh::Packet *ack = createAck(ack_hash);
         if (ack) {
           if (client->out_path_len == OUT_PATH_UNKNOWN) {
-            sendFloodReply(ack, TXT_ACK_DELAY, packet->getPathHashSize());
+            sendFloodReply(ack, getAckTransmitDelay(ack, TXT_ACK_DELAY), packet->getPathHashSize());
           } else {
-            sendDirect(ack, client->out_path, client->out_path_len, TXT_ACK_DELAY);
+            sendDirect(ack, client->out_path, client->out_path_len,
+                       getDirectAckTransmitDelay(ack, client->out_path, client->out_path_len,
+                                                 TXT_ACK_DELAY));
           }
         }
       }

@@ -477,18 +477,27 @@ void MyMesh::onPeerDataRecv(mesh::Packet *packet, uint8_t type, int sender_idx, 
       if (send_ack) {
         if (client->out_path_len == OUT_PATH_UNKNOWN) {
           mesh::Packet *ack = createAck(ack_hash);
-          if (ack) sendFloodReply(ack, TXT_ACK_DELAY, packet->getPathHashSize());
-          delay_millis = TXT_ACK_DELAY + REPLY_DELAY_MILLIS;
+          uint32_t ack_delay = ack ? getAckTransmitDelay(ack, TXT_ACK_DELAY) : TXT_ACK_DELAY;
+          if (ack) sendFloodReply(ack, ack_delay, packet->getPathHashSize());
+          delay_millis = ack_delay + REPLY_DELAY_MILLIS;
         } else {
           uint32_t d = TXT_ACK_DELAY;
+          bool ack_scheduled = false;
           if (getExtraAckTransmitCount() > 0) {
             mesh::Packet *a1 = createMultiAck(ack_hash, 1);
-            if (a1) sendDirect(a1, client->out_path, client->out_path_len, d);
-            d += 300;
+            if (a1) {
+              d = getDirectAckTransmitDelay(a1, client->out_path, client->out_path_len, d);
+              sendDirect(a1, client->out_path, client->out_path_len, d);
+              ack_scheduled = true;
+            }
           }
 
           mesh::Packet *a2 = createAck(ack_hash);
-          if (a2) sendDirect(a2, client->out_path, client->out_path_len, d);
+          if (a2) {
+            d = ack_scheduled ? getNextDirectAckTransmitDelay(a2, client->out_path, client->out_path_len, d)
+                              : getDirectAckTransmitDelay(a2, client->out_path, client->out_path_len, d);
+            sendDirect(a2, client->out_path, client->out_path_len, d);
+          }
           delay_millis = d + REPLY_DELAY_MILLIS;
         }
       } else {
@@ -555,7 +564,9 @@ void MyMesh::onPeerDataRecv(mesh::Packet *packet, uint8_t type, int sender_idx, 
           auto reply = createAck(ack_hash);
           if (reply) {
             reply->payload[reply->payload_len++] = getUnsyncedCount(client); // NEW: add unsynced counter to end of ACK packet
-            sendDirect(reply, client->out_path, client->out_path_len, SERVER_RESPONSE_DELAY);
+            sendDirect(reply, client->out_path, client->out_path_len,
+                       getDirectAckTransmitDelay(reply, client->out_path, client->out_path_len,
+                                                 SERVER_RESPONSE_DELAY));
           }
         }
       } else {

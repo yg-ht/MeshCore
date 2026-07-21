@@ -503,17 +503,25 @@ void SensorMesh::getPeerSharedSecret(uint8_t* dest_secret, int peer_idx) {
 void SensorMesh::sendAckTo(const ClientInfo& dest, uint32_t ack_hash, uint8_t path_hash_size) {
   if (dest.out_path_len == OUT_PATH_UNKNOWN) {
     mesh::Packet* ack = createAck(ack_hash);
-    if (ack) sendFlood(ack, TXT_ACK_DELAY, path_hash_size);
+    if (ack) sendFlood(ack, getAckTransmitDelay(ack, TXT_ACK_DELAY), path_hash_size);
   } else {
     uint32_t d = TXT_ACK_DELAY;
+    bool ack_scheduled = false;
     if (getExtraAckTransmitCount() > 0) {
       mesh::Packet* a1 = createMultiAck(ack_hash, 1);
-      if (a1) sendDirect(a1, dest.out_path, dest.out_path_len, d);
-      d += 300;
+      if (a1) {
+        d = getDirectAckTransmitDelay(a1, dest.out_path, dest.out_path_len, d);
+        sendDirect(a1, dest.out_path, dest.out_path_len, d);
+        ack_scheduled = true;
+      }
     }
 
     mesh::Packet* a2 = createAck(ack_hash);
-    if (a2) sendDirect(a2, dest.out_path, dest.out_path_len, d);
+    if (a2) {
+      d = ack_scheduled ? getNextDirectAckTransmitDelay(a2, dest.out_path, dest.out_path_len, d)
+                        : getDirectAckTransmitDelay(a2, dest.out_path, dest.out_path_len, d);
+      sendDirect(a2, dest.out_path, dest.out_path_len, d);
+    }
   }
 }
 
@@ -571,7 +579,7 @@ void SensorMesh::onPeerDataRecv(mesh::Packet* packet, uint8_t type, int sender_i
             // let this sender know path TO here, so they can use sendDirect(), and ALSO encode the ACK
             mesh::Packet* path = createPathReturn(from->id, secret, packet->path, packet->path_len,
                                                   PAYLOAD_TYPE_ACK, (uint8_t *) &ack_hash, 4);
-            if (path) sendFlood(path, TXT_ACK_DELAY, packet->getPathHashSize());
+            if (path) sendFlood(path, getAckTransmitDelay(path, TXT_ACK_DELAY), packet->getPathHashSize());
           } else {
             sendAckTo(*from, ack_hash, packet->getPathHashSize());
           }
