@@ -344,7 +344,7 @@ bool BaseChatMesh::onContactPathRecv(ContactInfo& from, uint8_t* in_path, uint8_
   if (extra_type == PAYLOAD_TYPE_ACK && extra_len >= 4) {
     // also got an encoded ACK!
     if (processAck(extra) != NULL) {
-      txt_send_timeout = 0;   // matched one we're waiting for, cancel timeout timer
+      clearAckWait(true);   // matched one we're waiting for, cancel timeout timer
     }
   } else if (extra_type == PAYLOAD_TYPE_RESPONSE && extra_len > 0) {
     onContactResponse(from, extra, extra_len);
@@ -377,7 +377,7 @@ bool BaseChatMesh::onContactPathRecv(ContactInfo& from, uint8_t* in_path, uint8_
 void BaseChatMesh::onAckRecv(mesh::Packet* packet, uint32_t ack_crc) {
   ContactInfo* from;
   if ((from = processAck((uint8_t *)&ack_crc)) != NULL) {
-    txt_send_timeout = 0;   // matched one we're waiting for, cancel timeout timer
+    clearAckWait(true);   // matched one we're waiting for, cancel timeout timer
     packet->markDoNotRetransmit();   // ACK was for this node, so don't retransmit
 
     if (packet->isRouteFlood() && from->out_path_len != OUT_PATH_UNKNOWN) {
@@ -469,21 +469,164 @@ mesh::Packet* BaseChatMesh::composeMsgPacket(const ContactInfo& recipient, uint3
   return createDatagram(PAYLOAD_TYPE_TXT_MSG, recipient.id, recipient.getSharedSecret(self_id), temp, len);
 }
 
+void BaseChatMesh::calculateAckOperationHash(uint8_t hash[8], const ContactInfo& recipient,
+                                             uint32_t timestamp, const char* text) const {
+  uint8_t data[sizeof(timestamp) + MAX_TEXT_LEN];
+  size_t text_len = strlen(text);
+  memcpy(data, &timestamp, sizeof(timestamp));
+  memcpy(&data[sizeof(timestamp)], text, text_len);
+  mesh::Utils::sha256(hash, 8, data, sizeof(timestamp) + text_len,
+                      recipient.id.pub_key, PUB_KEY_SIZE);
+}
+
+bool BaseChatMesh::isSameAckOperation(const uint8_t operation_hash[8]) const {
+  return ack_send.has_operation && memcmp(ack_send.operation_hash, operation_hash, 8) == 0;
+}
+
+uint32_t BaseChatMesh::getAckRetryBackoff(uint8_t attempt) {
+  if (attempt == 0) return 0;
+
+  // Cap the exponent before shifting so malformed or excessive attempt values
+  // cannot overflow and synchronized retrying clients cannot retain one phase.
+  uint8_t exponent = attempt - 1;
+  if (exponent > 6) exponent = 6;
+  uint32_t base = ACK_RETRY_BASE_BACKOFF_MS << exponent;
+  if (base > ACK_RETRY_MAX_BACKOFF_MS / 2) base = ACK_RETRY_MAX_BACKOFF_MS / 2;
+  return base + getRNG()->nextInt(0, base + 1);
+}
+
+uint32_t BaseChatMesh::estimateLocalSendDelay(uint32_t packet_airtime, uint32_t scheduled_delay) const {
+  // Queue order, CAD outcomes and duty-cycle waits can change after enqueueing.
+  // Use a bounded local estimate; the internal response timer starts from the
+  // actual completion callback and therefore does not depend on this estimate.
+  uint32_t queued_ahead = _mgr->getOutboundTotal();
+  if (queued_ahead > 8) queued_ahead = 8;
+  // Use the mean of Mesh's 120-360 ms CAD retry range. Estimation must not
+  // consume RNG state because doing so would alter the actual MAC schedule.
+  uint32_t per_packet = packet_airtime > UINT32_MAX - ACK_RETRY_CAD_ESTIMATE_MS
+                          ? UINT32_MAX
+                          : packet_airtime + ACK_RETRY_CAD_ESTIMATE_MS;
+  uint32_t queue_delay = per_packet > UINT32_MAX / (queued_ahead + 1)
+                           ? UINT32_MAX
+                           : per_packet * (queued_ahead + 1);
+  return scheduled_delay > UINT32_MAX - queue_delay ? UINT32_MAX : scheduled_delay + queue_delay;
+}
+
+uint32_t BaseChatMesh::getPendingAckWaitMillis() const {
+  uint32_t now = _ms->getMillis();
+  uint32_t deadline = ack_send.waiting_for_ack ? ack_send.ack_deadline : ack_send.reported_deadline;
+  return (int32_t)(deadline - now) > 0 ? deadline - now : 0;
+}
+
+void BaseChatMesh::clearAckWait(bool clear_operation) {
+  ack_send.waiting_for_local_tx = false;
+  ack_send.waiting_for_ack = false;
+  ack_send.packet = NULL;
+  txt_send_timeout = 0;
+  if (clear_operation) ack_send.has_operation = false;
+}
+
+void BaseChatMesh::onLocalPacketSent(mesh::Packet* packet) {
+  if (!ack_send.waiting_for_local_tx || ack_send.packet != packet) return;
+
+  ack_send.waiting_for_local_tx = false;
+  ack_send.waiting_for_ack = true;
+  ack_send.packet = NULL;
+  // Dispatcher timestamps are wrap-safe only for delays below half the
+  // uint32_t range. Route estimates should be much smaller, but clamp here so
+  // malformed configuration cannot turn saturation into an expired deadline.
+  uint32_t timer_delay = ack_send.response_timeout > 0x7FFFFFFFUL
+                           ? 0x7FFFFFFFUL
+                           : ack_send.response_timeout;
+  ack_send.ack_deadline = futureMillis(timer_delay);
+  txt_send_timeout = ack_send.ack_deadline;
+}
+
+void BaseChatMesh::onLocalPacketSendFailed(mesh::Packet* packet) {
+  if (!ack_send.waiting_for_local_tx || ack_send.packet != packet) return;
+
+  ack_send.waiting_for_local_tx = false;
+  ack_send.packet = NULL;
+  // Defer notification to loop() so callers are never re-entered from the
+  // packet manager or radio completion path.
+  txt_send_timeout = futureMillis(0);
+}
+
 int  BaseChatMesh::sendMessage(const ContactInfo& recipient, uint32_t timestamp, uint8_t attempt, const char* text, uint32_t& expected_ack, uint32_t& est_timeout) {
+  uint32_t now = _ms->getMillis();
+  size_t text_len = strlen(text);
+  if (text_len > MAX_TEXT_LEN || (attempt > 3 && text_len > MAX_TEXT_LEN - 2)) return MSG_SEND_FAILED;
+
+  uint8_t operation_hash[8];
+  calculateAckOperationHash(operation_hash, recipient, timestamp, text);
+  bool same_operation = isSameAckOperation(operation_hash);
+
+  if (attempt >= ACK_RETRY_MAX_ATTEMPTS) return MSG_SEND_FAILED;
+  if (same_operation && now - ack_send.first_attempt_at >= ACK_RETRY_MAX_AGE_MILLIS) {
+    clearAckWait(true);
+    return MSG_SEND_FAILED;
+  }
+
+  // A caller may retry from its own deadline while the earlier packet is
+  // still queued or its ACK is legitimately in flight. Reuse the existing
+  // correlation token and deadline instead of adding a duplicate packet.
+  if (same_operation &&
+      ((ack_send.waiting_for_local_tx && isPacketPending(ack_send.packet)) || ack_send.waiting_for_ack)) {
+    expected_ack = ack_send.expected_ack;
+    est_timeout = getPendingAckWaitMillis();
+    return ack_send.route_result;
+  }
+
   mesh::Packet* pkt = composeMsgPacket(recipient, timestamp, attempt, text, expected_ack);
   if (pkt == NULL) return MSG_SEND_FAILED;
 
+  // Include the encoded direct path in the airtime estimate before calculating
+  // the response deadline. sendDirect() repeats this idempotent preparation.
+  if (recipient.out_path_len != OUT_PATH_UNKNOWN) {
+    pkt->path_len = mesh::Packet::copyPath(pkt->path, recipient.out_path, recipient.out_path_len);
+    pkt->header = (pkt->header & ~PH_ROUTE_MASK) | ROUTE_TYPE_DIRECT;
+  }
   uint32_t t = _radio->getEstAirtimeFor(pkt->getRawLength());
+  uint32_t retry_delay = getAckRetryBackoff(attempt);
 
   int rc;
+  uint32_t response_timeout;
   if (recipient.out_path_len == OUT_PATH_UNKNOWN) {
-    sendFloodScoped(recipient, pkt);
-    txt_send_timeout = futureMillis(est_timeout = calcFloodTimeoutMillisFor(t));
     rc = MSG_SEND_SENT_FLOOD;
+    response_timeout = calcFloodTimeoutMillisFor(t);
   } else {
-    sendDirect(pkt, recipient.out_path, recipient.out_path_len);
-    txt_send_timeout = futureMillis(est_timeout = calcDirectTimeoutMillisFor(t, recipient.out_path_len));
     rc = MSG_SEND_SENT_DIRECT;
+    response_timeout = calcDirectTimeoutMillisFor(t, recipient.out_path_len);
+  }
+
+  uint32_t local_delay = estimateLocalSendDelay(t, retry_delay);
+  est_timeout = response_timeout > UINT32_MAX - local_delay ? UINT32_MAX : response_timeout + local_delay;
+
+  ack_send.has_operation = true;
+  ack_send.waiting_for_local_tx = true;
+  ack_send.waiting_for_ack = false;
+  ack_send.packet = pkt;
+  memcpy(ack_send.operation_hash, operation_hash, sizeof(operation_hash));
+  ack_send.expected_ack = expected_ack;
+  ack_send.first_attempt_at = same_operation ? ack_send.first_attempt_at : now;
+  ack_send.response_timeout = response_timeout;
+  uint32_t reported_timer_delay = est_timeout > 0x7FFFFFFFUL ? 0x7FFFFFFFUL : est_timeout;
+  ack_send.reported_deadline = futureMillis(reported_timer_delay);
+  ack_send.ack_deadline = 0;
+  ack_send.attempt = attempt;
+  ack_send.route_result = rc;
+  txt_send_timeout = 0;
+
+  if (rc == MSG_SEND_SENT_FLOOD) {
+    sendFloodScoped(recipient, pkt, retry_delay);
+  } else {
+    sendDirect(pkt, recipient.out_path, recipient.out_path_len, retry_delay);
+  }
+
+  // A full PacketManager queue rejects and releases synchronously.
+  if (!isPacketPending(pkt)) {
+    clearAckWait(false);
+    return MSG_SEND_FAILED;
   }
   return rc;
 }
@@ -500,17 +643,26 @@ int  BaseChatMesh::sendCommandData(const ContactInfo& recipient, uint32_t timest
   auto pkt = createDatagram(PAYLOAD_TYPE_TXT_MSG, recipient.id, recipient.getSharedSecret(self_id), temp, 5 + text_len);
   if (pkt == NULL) return MSG_SEND_FAILED;
 
+  // Match sendMessage(): account for the encoded path and current queue before
+  // enqueueing this packet, while keeping command data outside ACK state.
+  if (recipient.out_path_len != OUT_PATH_UNKNOWN) {
+    pkt->path_len = mesh::Packet::copyPath(pkt->path, recipient.out_path, recipient.out_path_len);
+    pkt->header = (pkt->header & ~PH_ROUTE_MASK) | ROUTE_TYPE_DIRECT;
+  }
   uint32_t t = _radio->getEstAirtimeFor(pkt->getRawLength());
+  uint32_t local_delay = estimateLocalSendDelay(t, 0);
+  uint32_t response_timeout;
   int rc;
   if (recipient.out_path_len == OUT_PATH_UNKNOWN) {
     sendFloodScoped(recipient, pkt);
-    txt_send_timeout = futureMillis(est_timeout = calcFloodTimeoutMillisFor(t));
+    response_timeout = calcFloodTimeoutMillisFor(t);
     rc = MSG_SEND_SENT_FLOOD;
   } else {
     sendDirect(pkt, recipient.out_path, recipient.out_path_len);
-    txt_send_timeout = futureMillis(est_timeout = calcDirectTimeoutMillisFor(t, recipient.out_path_len));
+    response_timeout = calcDirectTimeoutMillisFor(t, recipient.out_path_len);
     rc = MSG_SEND_SENT_DIRECT;
   }
+  est_timeout = response_timeout > UINT32_MAX - local_delay ? UINT32_MAX : response_timeout + local_delay;
   return rc;
 }
 
@@ -987,8 +1139,8 @@ void BaseChatMesh::loop() {
 
   if (txt_send_timeout && millisHasNowPassed(txt_send_timeout)) {
     // failed to get an ACK
+    clearAckWait(false);
     onSendTimeout();
-    txt_send_timeout = 0;
   }
 
   if (_pendingLoopback) {

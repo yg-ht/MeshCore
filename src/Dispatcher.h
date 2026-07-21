@@ -186,6 +186,7 @@ class Dispatcher {
   void processRecvPacket(Packet* pkt);
   void updateTxBudget();
   void scheduleNoiseFloorRefreshAfterRadioAnomaly();
+  void releaseFailedPacket(Packet* packet);
 
 protected:
   PacketManager* _mgr;
@@ -216,6 +217,10 @@ protected:
   virtual void logRx(Packet* packet, int len, float score) { }   // hooks for custom logging
   virtual void logTx(Packet* packet, int len) { }
   virtual void logTxFail(Packet* packet, int len) { }
+  /** Called after the radio confirms that a locally queued packet was sent. */
+  virtual void onLocalPacketSent(Packet* packet) { }
+  /** Called when a locally queued packet is discarded before confirmed transmission. */
+  virtual void onLocalPacketSendFailed(Packet* packet) { }
   virtual void logMacEvent(const char* event, Packet* packet, int len, uint8_t priority,
                            uint32_t delay_millis, uint32_t airtime_millis, uint32_t value) { }
   virtual const char* getLogDateTime() { return ""; }
@@ -239,6 +244,12 @@ public:
   Packet* obtainNewPacket();
   void releasePacket(Packet* packet);
   void sendPacket(Packet* packet, uint8_t priority, uint32_t delay_millis=0);
+
+  /**
+   * \returns true while packet is either queued locally or being transmitted.
+   *          Packet identity is compared by address and is never dereferenced.
+   */
+  bool isPacketPending(const Packet* packet);
 
   unsigned long getTotalAirTime() const { return total_air_time; }
   unsigned long getReceiveAirTime() const {return rx_air_time; }

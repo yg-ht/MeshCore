@@ -15,6 +15,14 @@
 #define MSG_SEND_SENT_FLOOD   1
 #define MSG_SEND_SENT_DIRECT  2
 
+// Retry bounds are deliberately local: independently operated peers cannot
+// advertise or enforce a shared route-wide congestion window.
+#define ACK_RETRY_MAX_ATTEMPTS       8
+#define ACK_RETRY_MAX_AGE_MILLIS     (5UL * 60UL * 1000UL)
+#define ACK_RETRY_BASE_BACKOFF_MS    250UL
+#define ACK_RETRY_MAX_BACKOFF_MS     30000UL
+#define ACK_RETRY_CAD_ESTIMATE_MS    240UL
+
 #define REQ_TYPE_GET_STATUS      0x01   // same as _GET_STATS
 #define REQ_TYPE_KEEP_ALIVE      0x02
 
@@ -66,6 +74,20 @@ class BaseChatMesh : public mesh::Mesh {
   int sort_array[MAX_CONTACTS+MAX_ANON_CONTACTS];
   int matching_peer_indexes[MAX_SEARCH_RESULTS];
   unsigned long txt_send_timeout;
+  struct AckSendState {
+    bool has_operation;
+    bool waiting_for_local_tx;
+    bool waiting_for_ack;
+    mesh::Packet* packet;
+    uint8_t operation_hash[8];
+    uint32_t expected_ack;
+    uint32_t first_attempt_at;
+    uint32_t response_timeout;
+    uint32_t reported_deadline;
+    uint32_t ack_deadline;
+    uint8_t attempt;
+    uint8_t route_result;
+  } ack_send;
 #ifdef MAX_GROUP_CHANNELS
   ChannelDetails channels[MAX_GROUP_CHANNELS];
   int num_channels;  // only for addChannel()
@@ -76,6 +98,13 @@ class BaseChatMesh : public mesh::Mesh {
 
   mesh::Packet* composeMsgPacket(const ContactInfo& recipient, uint32_t timestamp, uint8_t attempt, const char *text, uint32_t& expected_ack);
   void sendAckTo(const ContactInfo& dest, const uint8_t* ack_hash, uint8_t ack_len=4);
+  void calculateAckOperationHash(uint8_t hash[8], const ContactInfo& recipient,
+                                 uint32_t timestamp, const char* text) const;
+  bool isSameAckOperation(const uint8_t operation_hash[8]) const;
+  uint32_t getAckRetryBackoff(uint8_t attempt);
+  uint32_t estimateLocalSendDelay(uint32_t packet_airtime, uint32_t scheduled_delay) const;
+  uint32_t getPendingAckWaitMillis() const;
+  void clearAckWait(bool clear_operation);
 
 protected:
   BaseChatMesh(mesh::Radio& radio, mesh::MillisecondClock& ms, mesh::RNG& rng, mesh::RTCClock& rtc, mesh::PacketManager& mgr, mesh::MeshTables& tables)
@@ -88,6 +117,7 @@ protected:
     num_channels = 0;
   #endif
     txt_send_timeout = 0;
+    memset(&ack_send, 0, sizeof(ack_send));
     _pendingLoopback = NULL;
     memset(connections, 0, sizeof(connections));
   }
@@ -139,6 +169,8 @@ protected:
   void onPeerDataRecv(mesh::Packet* packet, uint8_t type, int sender_idx, const uint8_t* secret, uint8_t* data, size_t len) override;
   bool onPeerPathRecv(mesh::Packet* packet, int sender_idx, const uint8_t* secret, uint8_t* path, uint8_t path_len, uint8_t extra_type, uint8_t* extra, uint8_t extra_len) override;
   void onAckRecv(mesh::Packet* packet, uint32_t ack_crc) override;
+  void onLocalPacketSent(mesh::Packet* packet) override;
+  void onLocalPacketSendFailed(mesh::Packet* packet) override;
 #ifdef MAX_GROUP_CHANNELS
   int searchChannelsByHash(const uint8_t* hash, mesh::GroupChannel channels[], int max_matches) override;
 #endif

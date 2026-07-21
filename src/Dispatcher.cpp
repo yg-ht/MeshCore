@@ -121,6 +121,7 @@ void Dispatcher::loop() {
       } else {
         n_sent_direct++;
       }
+      onLocalPacketSent(outbound);
       releasePacket(outbound);  // return to pool
       outbound = NULL;
     } else if (millisHasNowPassed(outbound_expiry)) {
@@ -132,7 +133,7 @@ void Dispatcher::loop() {
       logMacEvent("tx_timeout", outbound, 2 + outbound->getPathByteLen() + outbound->payload_len, 0, 0, 0, 0);
       logTxFail(outbound, 2 + outbound->getPathByteLen() + outbound->payload_len);
 
-      releasePacket(outbound);  // return to pool
+      releaseFailedPacket(outbound);
       outbound = NULL;
     } else {
       return;  // can't do any more radio activity until send is complete or timed out
@@ -287,6 +288,7 @@ void Dispatcher::processRecvPacket(Packet* pkt) {
     mac_stats.retransmit++;
     logMacEvent("retransmit", pkt, pkt->getRawLength(), priority, _delay, _radio->getEstAirtimeFor(pkt->getRawLength()), 0);
     _mgr->queueOutbound(pkt, priority, futureMillis(_delay));
+    if (!isPacketPending(pkt)) onLocalPacketSendFailed(pkt);
   }
 }
 
@@ -326,7 +328,7 @@ void Dispatcher::checkSend() {
       if (policy == CAD_TIMEOUT_POLICY_DROP) {
         Packet* dropped = _mgr->getNextOutbound(_ms->getMillis());
         if (dropped) {
-          releasePacket(dropped);
+          releaseFailedPacket(dropped);
         }
         cad_defer_start = 0;
         cad_defer_timeouts = 0;
@@ -346,7 +348,7 @@ void Dispatcher::checkSend() {
         if (age_expired || count_expired) {
           Packet* expired = _mgr->getNextOutbound(_ms->getMillis());
           if (expired) {
-            releasePacket(expired);
+            releaseFailedPacket(expired);
           }
           cad_defer_start = 0;
           cad_defer_timeouts = 0;
@@ -387,7 +389,7 @@ void Dispatcher::checkSend() {
       MESH_DEBUG_PRINTLN("%s Dispatcher::checkSend(): FATAL: Invalid packet queued... too long, len=%d", getLogDateTime(), len + outbound->payload_len);
       mac_stats.invalid_queue++;
       logMacEvent("invalid_queue", outbound, len + outbound->payload_len, 0, 0, 0, 0);
-      _mgr->free(outbound);
+      releaseFailedPacket(outbound);
       outbound = NULL;
     } else {
       memcpy(&raw[len], outbound->payload, outbound->payload_len); len += outbound->payload_len;
@@ -403,7 +405,7 @@ void Dispatcher::checkSend() {
         logMacEvent("tx_start_fail", outbound, outbound->getRawLength(), 0, 0, max_airtime, 0);
         logTxFail(outbound, outbound->getRawLength());
   
-        releasePacket(outbound);  // return to pool
+        releaseFailedPacket(outbound);
         outbound = NULL;
         return;
       }
@@ -442,15 +444,34 @@ void Dispatcher::releasePacket(Packet* packet) {
   _mgr->free(packet);
 }
 
+void Dispatcher::releaseFailedPacket(Packet* packet) {
+  onLocalPacketSendFailed(packet);
+  releasePacket(packet);
+}
+
+bool Dispatcher::isPacketPending(const Packet* packet) {
+  if (packet == NULL) return false;
+  if (outbound == packet) return true;
+
+  int queued = _mgr->getOutboundTotal();
+  for (int i = 0; i < queued; i++) {
+    if (_mgr->getOutboundByIdx(i) == packet) return true;
+  }
+  return false;
+}
+
 void Dispatcher::sendPacket(Packet* packet, uint8_t priority, uint32_t delay_millis) {
   if (!Packet::isValidPathLen(packet->path_len) || packet->payload_len > MAX_PACKET_PAYLOAD) {
     MESH_DEBUG_PRINTLN("%s Dispatcher::sendPacket(): ERROR: invalid packet... path_len=%d, payload_len=%d", getLogDateTime(), (uint32_t) packet->path_len, (uint32_t) packet->payload_len);
     mac_stats.invalid_queue++;
     logMacEvent("invalid_queue", packet, packet->getRawLength(), priority, delay_millis, 0, 0);
-    _mgr->free(packet);
+    releaseFailedPacket(packet);
   } else {
     logMacEvent("queue_tx", packet, packet->getRawLength(), priority, delay_millis, _radio->getEstAirtimeFor(packet->getRawLength()), _mgr->getOutboundTotal());
     _mgr->queueOutbound(packet, priority, futureMillis(delay_millis));
+    // PacketManager has a void queue API and may reject a full queue. Detect
+    // that synchronously so ACK state does not wait for a packet already freed.
+    if (!isPacketPending(packet)) onLocalPacketSendFailed(packet);
   }
 }
 
